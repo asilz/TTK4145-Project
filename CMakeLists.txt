@@ -15,9 +15,13 @@ if(NOT DEFINED FLOOR_COUNT)
 endif()
 
 if(NOT DEFINED ELEVATOR_COUNT)
-    set(ELEVATOR_COUNT 4)
+    set(ELEVATOR_COUNT 3)
 endif()
 
-target_compile_definitions(elevator PRIVATE FLOOR_COUNT=${FLOOR_COUNT} ELEVATOR_COUNT=${ELEVATOR_COUNT})
+if(NOT DEFINED LOG_LEVEL)
+    set(LOG_LEVEL 3)
+endif()
+
+target_compile_definitions(elevator PRIVATE FLOOR_COUNT=${FLOOR_COUNT} ELEVATOR_COUNT=${ELEVATOR_COUNT} LOG_LEVEL=${LOG_LEVEL})
 target_compile_options(elevator PRIVATE -Wall -Werror=vla)
 target_include_directories(elevator PUBLIC include)
