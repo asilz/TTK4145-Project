@@ -1,1 +1,1 @@
-target_sources(elevator PRIVATE main.c)
+target_sources(elevator PRIVATE main.c queue.c)
