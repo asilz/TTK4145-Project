@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(TTK4145)
 
+set(CMAKE_BUILD_TYPE Debug)
+
 set(CMAKE_C_FLAGS_DEBUG "-g")
 set(CMAKE_C_FLAGS_RELEASE "-O3")
 

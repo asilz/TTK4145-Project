@@ -31,7 +31,7 @@ int order_queue_push(const struct Order *order)
     order_queue.data[order_queue.tail_index++] = *order;
     order_queue.tail_index = order_queue.tail_index % (sizeof(order_queue.data) / sizeof(order_queue.data[0]));
     pthread_mutex_unlock(&order_queue.mutex);
-    sem_post(&order_queue.empty);
+    sem_post(&order_queue.full);
 
     return 0;
 }
@@ -43,7 +43,7 @@ int order_queue_pop(struct Order *order)
     *order = order_queue.data[order_queue.head_index++];
     order_queue.tail_index = order_queue.head_index % (sizeof(order_queue.data) / sizeof(order_queue.data[0]));
     pthread_mutex_unlock(&order_queue.mutex);
-    sem_post(&order_queue.full);
+    sem_post(&order_queue.empty);
 
     return 0;
 }
@@ -53,4 +53,6 @@ int order_queue_deinit()
     sem_destroy(&order_queue.full);
     sem_destroy(&order_queue.empty);
     pthread_mutex_destroy(&order_queue.mutex);
+
+    return 0;
 }
