@@ -73,7 +73,7 @@ void *thread_routine(void *args)
     int tcp_socket = *((int *)(args));
     size_t current_floor = 0;
     size_t target_floor = 0;
-    uint8_t cab_buttons[FLOOR_COUNT] = {0};
+    bool cab_buttons[FLOOR_COUNT] = {0};
     enum ElevatorState current_state = ELEVATOR_STATE_IDLE;
     while (1)
     {
@@ -102,7 +102,7 @@ void *thread_routine(void *args)
             recv(tcp_socket, &msg, sizeof(msg), 0);
             if (msg.args[0])
             {
-                cab_buttons[i] = 1;
+                cab_buttons[i] = true;
             }
         }
 
@@ -115,7 +115,7 @@ void *thread_routine(void *args)
         {
             send(tcp_socket, &msg_motor_stop, sizeof(msg_motor_stop), 0);
             current_state = ELEVATOR_STATE_IDLE;
-            cab_buttons[target_floor] = 0;
+            cab_buttons[target_floor] = false;
             // TODO: Open doors
             pthread_mutex_lock(&context.lock);
             context.floor_states[target_floor] = 0;
