@@ -73,6 +73,7 @@ void *thread_routine(void *args)
     int tcp_socket = *((int *)(args));
     size_t current_floor = 0;
     size_t target_floor = 0;
+    uint8_t cab_buttons[FLOOR_COUNT] = {0};
     enum ElevatorState current_state = ELEVATOR_STATE_IDLE;
     while (1)
     {
@@ -94,18 +95,55 @@ void *thread_routine(void *args)
             context.floor_states[i] |= floor_state;
             pthread_mutex_unlock(&context.lock);
 
-            msg.command = FLOOR_SENSOR;
+            msg.command = ORDER_BUTTON;
+            msg.args[0] = CAB;
+            msg.args[1] = i;
             send(tcp_socket, &msg, sizeof(msg), 0);
             recv(tcp_socket, &msg, sizeof(msg), 0);
-            current_floor = msg.args[1];
-            if (current_state == ELEVATOR_STATE_MOVING && current_floor == target_floor && msg.args[0])
+            if (msg.args[0])
             {
-                send(tcp_socket, &msg_motor_stop, sizeof(msg_motor_stop), 0);
-                current_state = ELEVATOR_STATE_IDLE;
-                // TODO: Open doors
+                cab_buttons[i] = 1;
+            }
+        }
+
+        struct Message msg = {.command = FLOOR_SENSOR};
+        send(tcp_socket, &msg, sizeof(msg), 0);
+        recv(tcp_socket, &msg, sizeof(msg), 0);
+        current_floor = msg.args[1];
+
+        if (current_state == ELEVATOR_STATE_MOVING && current_floor == target_floor && msg.args[0])
+        {
+            send(tcp_socket, &msg_motor_stop, sizeof(msg_motor_stop), 0);
+            current_state = ELEVATOR_STATE_IDLE;
+            cab_buttons[target_floor] = 0;
+            // TODO: Open doors
+            pthread_mutex_lock(&context.lock);
+            context.floor_states[target_floor] = 0;
+            pthread_mutex_unlock(&context.lock);
+        }
+
+        if (current_state != ELEVATOR_STATE_IDLE)
+        {
+            continue;
+        }
+
+        for (target_floor = 0; target_floor < FLOOR_COUNT; ++target_floor)
+        {
+            if (cab_buttons[target_floor])
+            {
                 pthread_mutex_lock(&context.lock);
-                context.floor_states[i] = 0;
+                context.floor_states[target_floor] |= FLOOR_FLAG_LOCKED;
                 pthread_mutex_unlock(&context.lock);
+                current_state = ELEVATOR_STATE_MOVING;
+                if (target_floor > current_floor)
+                {
+                    send(tcp_socket, &msg_motor_up, sizeof(msg_motor_up), 0);
+                }
+                if (target_floor < current_floor)
+                {
+                    send(tcp_socket, &msg_motor_down, sizeof(msg_motor_down), 0);
+                }
+                break;
             }
         }
 
@@ -115,10 +153,10 @@ void *thread_routine(void *args)
         }
 
         pthread_mutex_lock(&context.lock);
-        for (size_t target_floor = 0; target_floor < FLOOR_COUNT; ++target_floor)
+        for (target_floor = 0; target_floor < FLOOR_COUNT; ++target_floor)
         {
-            if (context.floor_states[target_floor] & (FLOOR_FLAG_BUTTON_DOWN | FLOOR_FLAG_BUTTON_UP) &&
-                !(context.floor_states[target_floor] & FLOOR_FLAG_LOCKED))
+            if ((context.floor_states[target_floor] & (FLOOR_FLAG_BUTTON_DOWN | FLOOR_FLAG_BUTTON_UP)) &&
+                (!(context.floor_states[target_floor] & FLOOR_FLAG_LOCKED)))
             {
                 if (current_floor == target_floor)
                 {

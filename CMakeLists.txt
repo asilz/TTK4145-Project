@@ -4,6 +4,8 @@ project(TTK4145)
 set(CMAKE_C_FLAGS_DEBUG "-g")
 set(CMAKE_C_FLAGS_RELEASE "-O3")
 
+set(CMAKE_BUILD_TYPE Debug)
+
 set(CMAKE_C_COMPILER "gcc")
 set(CMAKE_CXX_COMPILER "g++")
 
