@@ -82,13 +82,13 @@ void *thread_routine(void *args)
             uint8_t floor_state = 0;
 
             struct Message msg = {.command = ORDER_BUTTON, .args = {0, i}};
-            send(tcp_socket, &msg, sizeof(msg), 0);
-            recv(tcp_socket, &msg, sizeof(msg), 0);
+            send(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
+            recv(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
             floor_state = floor_state | msg.args[0];
             msg.args[0] = 1;
             msg.args[1] = i;
-            send(tcp_socket, &msg, sizeof(msg), 0);
-            recv(tcp_socket, &msg, sizeof(msg), 0);
+            send(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
+            recv(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
             floor_state = floor_state | (msg.args[0] << 1);
 
             pthread_mutex_lock(&context.lock);
@@ -98,8 +98,8 @@ void *thread_routine(void *args)
             msg.command = ORDER_BUTTON;
             msg.args[0] = CAB;
             msg.args[1] = i;
-            send(tcp_socket, &msg, sizeof(msg), 0);
-            recv(tcp_socket, &msg, sizeof(msg), 0);
+            send(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
+            recv(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
             if (msg.args[0])
             {
                 cab_buttons[i] = true;
@@ -107,8 +107,8 @@ void *thread_routine(void *args)
         }
 
         struct Message msg = {.command = FLOOR_SENSOR};
-        send(tcp_socket, &msg, sizeof(msg), 0);
-        recv(tcp_socket, &msg, sizeof(msg), 0);
+        send(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
+        recv(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
         current_floor = msg.args[1];
 
         if (current_state == ELEVATOR_STATE_MOVING && current_floor == target_floor && msg.args[0])
