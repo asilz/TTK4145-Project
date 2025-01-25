@@ -228,5 +228,7 @@ int main()
         pthread_join(pthread[i], NULL);
     }
 
+    pthread_mutex_destroy(&context.lock);
+
     return 0;
 }
