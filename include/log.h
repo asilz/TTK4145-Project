@@ -5,19 +5,19 @@
 #endif
 
 #if LOG_LEVEL > 2
-#define LOG_INFO(...) printf(__VA_ARGS__);
+#define LOG_INFO(...) printf(__VA_ARGS__)
 #else
 #define LOG_INFO(...)
 #endif
 
 #if LOG_LEVEL > 1
-#define LOG_WARNING(...) printf(__VA_ARGS__);
+#define LOG_WARNING(...) printf(__VA_ARGS__)
 #else
 #define LOG_WARNING(...)
 #endif
 
 #if LOG_LEVEL > 0
-#define LOG_ERROR(...) printf(__VA_ARGS__);
+#define LOG_ERROR(format, ...) printf(format " %s %d\n", __VA_ARGS__, __FILE__, __LINE__)
 #else
 #define LOG_ERROR(...)
 #endif

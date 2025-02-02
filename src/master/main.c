@@ -1,5 +1,6 @@
 #include <log.h>
 #include <netinet/ip.h>
+#include <network.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -18,32 +19,13 @@
 #define ELEVATOR_COUNT 1
 #endif
 
-typedef enum CommandType
-{
-    RELOAD_CONFIG = 0,
-    MOTOR_DIRECTION,
-    ORDER_BUTTON_LIGHT,
-    FLOOR_INDICATOR,
-    DOOR_OPEN_LIGHT,
-    STOP_BUTTON_LIGHT,
-    ORDER_BUTTON,
-    FLOOR_SENSOR,
-    STOP_BUTTON,
-    OBSTRUCTION_SWITCH,
-} CommandType;
+#ifndef MASTER_PORT
+#define MASTER_PORT 17532
+#endif
 
-typedef enum ButtonType
-{
-    HALL_UP,
-    HALL_DOWN,
-    CAB,
-} ButtonType;
-
-struct Message
-{
-    int8_t command;
-    int8_t args[3];
-};
+#ifndef SLAVE_PORT
+#define SLAVE_PORT 17533
+#endif
 
 enum FloorFlags
 {
@@ -64,16 +46,17 @@ static struct
     pthread_mutex_t lock;
 } context = {.floor_states = {0}};
 
-static const struct Message msg_motor_up = {.command = MOTOR_DIRECTION, .args = {1}};
-static const struct Message msg_motor_down = {.command = MOTOR_DIRECTION, .args = {-1}};
-static const struct Message msg_motor_stop = {.command = MOTOR_DIRECTION, .args = {0}};
+static const struct Message msg_motor_up = {.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {1}};
+static const struct Message msg_motor_down = {.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {-1}};
+static const struct Message msg_motor_stop = {.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {0}};
 
 void *thread_routine(void *args)
 {
-    int tcp_socket = *((int *)(args));
+    Socket *tcp_socket = ((Socket *)(args));
     size_t current_floor = 0;
     size_t target_floor = 0;
     bool cab_buttons[FLOOR_COUNT] = {0};
+    int err = 0;
     enum ElevatorState current_state = ELEVATOR_STATE_IDLE;
     while (1)
     {
@@ -81,39 +64,69 @@ void *thread_routine(void *args)
         {
             uint8_t floor_state = 0;
 
-            struct Message msg = {.command = ORDER_BUTTON, .args = {0, i}};
-            send(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
-            recv(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
+            struct Message msg = {.command = COMMAND_TYPE_ORDER_BUTTON, .args = {BUTTON_TYPE_HALL_UP, i}};
+            err = tcp_socket->send(tcp_socket, &msg);
+            if (err != 0)
+            {
+                LOG_ERROR("send err = %d", err);
+            }
+            err = tcp_socket->recv(tcp_socket, &msg);
+            if (err != 0)
+            {
+                LOG_ERROR("recv err = %d", err);
+            }
             floor_state = floor_state | msg.args[0];
-            msg.args[0] = 1;
+            msg.args[0] = BUTTON_TYPE_HALL_DOWN;
             msg.args[1] = i;
-            send(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
-            recv(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
+            err = tcp_socket->send(tcp_socket, &msg);
+            if (err != 0)
+            {
+                LOG_ERROR("send err = %d", err);
+            }
+            err = tcp_socket->recv(tcp_socket, &msg);
+            if (err != 0)
+            {
+                LOG_ERROR("recv err = %d", err);
+            }
             floor_state = floor_state | (msg.args[0] << 1);
+
+            if (floor_state != 0)
+            {
+                LOG_INFO("HALL BUTTON MASTER\n");
+            }
 
             pthread_mutex_lock(&context.lock);
             context.floor_states[i] |= floor_state;
             pthread_mutex_unlock(&context.lock);
 
-            msg.command = ORDER_BUTTON;
-            msg.args[0] = CAB;
+            msg.command = COMMAND_TYPE_ORDER_BUTTON;
+            msg.args[0] = BUTTON_TYPE_CAB;
             msg.args[1] = i;
-            send(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
-            recv(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
+            err = tcp_socket->send(tcp_socket, &msg);
+            if (err != 0)
+            {
+                LOG_ERROR("send err = %d", err);
+            }
+            err = tcp_socket->recv(tcp_socket, &msg);
+            if (err != 0)
+            {
+                LOG_ERROR("recv err = %d", err);
+            }
             if (msg.args[0])
             {
                 cab_buttons[i] = true;
             }
+            LOG_INFO("Info loop\n");
         }
 
-        struct Message msg = {.command = FLOOR_SENSOR};
-        send(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
-        recv(tcp_socket, &msg, sizeof(msg), MSG_NOSIGNAL);
+        struct Message msg = {.command = COMMAND_TYPE_FLOOR_SENSOR};
+        tcp_socket->send(tcp_socket, &msg);
+        tcp_socket->recv(tcp_socket, &msg);
         current_floor = msg.args[1];
 
         if (current_state == ELEVATOR_STATE_MOVING && current_floor == target_floor && msg.args[0])
         {
-            send(tcp_socket, &msg_motor_stop, sizeof(msg_motor_stop), 0);
+            tcp_socket->send(tcp_socket, &msg_motor_stop);
             current_state = ELEVATOR_STATE_IDLE;
             cab_buttons[target_floor] = false;
             // TODO: Open doors
@@ -137,11 +150,19 @@ void *thread_routine(void *args)
                 current_state = ELEVATOR_STATE_MOVING;
                 if (target_floor > current_floor)
                 {
-                    send(tcp_socket, &msg_motor_up, sizeof(msg_motor_up), 0);
+                    err = tcp_socket->send(tcp_socket, &msg_motor_up);
+                    if (err != 0)
+                    {
+                        LOG_ERROR("recv err = %d", err);
+                    }
                 }
                 if (target_floor < current_floor)
                 {
-                    send(tcp_socket, &msg_motor_down, sizeof(msg_motor_down), 0);
+                    err = tcp_socket->send(tcp_socket, &msg_motor_down);
+                    if (err != 0)
+                    {
+                        LOG_ERROR("recv err = %d", err);
+                    }
                 }
                 break;
             }
@@ -166,11 +187,19 @@ void *thread_routine(void *args)
                 context.floor_states[target_floor] |= FLOOR_FLAG_LOCKED;
                 if (target_floor > current_floor)
                 {
-                    send(tcp_socket, &msg_motor_up, sizeof(msg_motor_up), 0);
+                    err = tcp_socket->send(tcp_socket, &msg_motor_up);
+                    if (err != 0)
+                    {
+                        LOG_ERROR("recv err = %d", err);
+                    }
                 }
                 if (target_floor < current_floor)
                 {
-                    send(tcp_socket, &msg_motor_down, sizeof(msg_motor_down), 0);
+                    err = tcp_socket->send(tcp_socket, &msg_motor_down);
+                    if (err != 0)
+                    {
+                        LOG_ERROR("recv err = %d", err);
+                    }
                 }
                 current_state = ELEVATOR_STATE_MOVING;
                 break;
@@ -184,46 +213,33 @@ int main()
 {
     pthread_mutex_init(&context.lock, NULL);
 
-    int sockets[ELEVATOR_COUNT];
+    Socket sockets[ELEVATOR_COUNT];
     pthread_t pthread[ELEVATOR_COUNT];
-    for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+    for (size_t i = 1; i < ELEVATOR_COUNT; ++i)
     {
-
-        sockets[i] = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (sockets[i] < 0)
-        {
-            return sockets[i];
-        }
-
-        struct sockaddr *addr;
 
         struct sockaddr_in addr_in;
         addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        addr_in.sin_port = htons(15657 + i);
+        addr_in.sin_port = htons(SLAVE_PORT);
         addr_in.sin_family = AF_INET;
 
-        addr = (struct sockaddr *)&addr_in;
+        struct sockaddr_in bind_address = {
+            .sin_addr.s_addr = htonl(INADDR_LOOPBACK), .sin_port = htons(MASTER_PORT), .sin_family = AF_INET};
 
-        struct timeval time;
-        time.tv_sec = UINT32_MAX;
-        time.tv_usec = 0;
-
-        int err = setsockopt(sockets[i], SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time));
-        if (err)
-        {
-            return err;
-        }
-
-        err = connect(sockets[i], addr, sizeof(addr_in));
-        if (err)
-        {
-            return err;
-        }
+        socket_udp_init(&sockets[i], &addr_in, &bind_address);
 
         pthread_create(&pthread[i], NULL, thread_routine, &sockets[i]);
     }
 
-    for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+    /*
+        struct sockaddr_in addr_in;
+        addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr_in.sin_port = htons(15659);
+        addr_in.sin_family = AF_INET;
+
+        socket_tcp_client_init(&sockets[0], &addr_in);
+    */
+    for (size_t i = 1; i < ELEVATOR_COUNT; ++i)
     {
         pthread_join(pthread[i], NULL);
     }
