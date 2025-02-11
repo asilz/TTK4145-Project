@@ -1,6 +1,6 @@
+#include <driver.h>
 #include <log.h>
 #include <netinet/ip.h>
-#include <network.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -46,87 +46,55 @@ static struct
     pthread_mutex_t lock;
 } context = {.floor_states = {0}};
 
-static const struct Message msg_motor_up = {.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {1}};
-static const struct Message msg_motor_down = {.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {-1}};
-static const struct Message msg_motor_stop = {.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {0}};
-
 void *thread_routine(void *args)
 {
-    Socket *tcp_socket = ((Socket *)(args));
+    socket_t *tcp_socket = ((socket_t *)(args));
     size_t current_floor = 0;
     size_t target_floor = 0;
-    bool cab_buttons[FLOOR_COUNT] = {0};
+    uint8_t cab_buttons[FLOOR_COUNT] = {0};
     int err = 0;
     enum ElevatorState current_state = ELEVATOR_STATE_IDLE;
     while (1)
     {
-        for (size_t i = 0; i < FLOOR_COUNT; ++i)
+
+        uint8_t hall_up_floor_states[FLOOR_COUNT];
+        err = tcp_socket->vfptr->get_button_signals(tcp_socket, BUTTON_TYPE_HALL_UP, hall_up_floor_states);
+        if (err != 0)
         {
-            uint8_t floor_state = 0;
-
-            struct Message msg = {.command = COMMAND_TYPE_ORDER_BUTTON, .args = {BUTTON_TYPE_HALL_UP, i}};
-            err = tcp_socket->send(tcp_socket, &msg);
-            if (err != 0)
-            {
-                LOG_ERROR("send err = %d", err);
-            }
-            err = tcp_socket->recv(tcp_socket, &msg);
-            if (err != 0)
-            {
-                LOG_ERROR("recv err = %d", err);
-            }
-            floor_state = floor_state | msg.args[0];
-            msg.args[0] = BUTTON_TYPE_HALL_DOWN;
-            msg.args[1] = i;
-            err = tcp_socket->send(tcp_socket, &msg);
-            if (err != 0)
-            {
-                LOG_ERROR("send err = %d", err);
-            }
-            err = tcp_socket->recv(tcp_socket, &msg);
-            if (err != 0)
-            {
-                LOG_ERROR("recv err = %d", err);
-            }
-            floor_state = floor_state | (msg.args[0] << 1);
-
-            if (floor_state != 0)
-            {
-                LOG_INFO("HALL BUTTON MASTER\n");
-            }
-
-            pthread_mutex_lock(&context.lock);
-            context.floor_states[i] |= floor_state;
-            pthread_mutex_unlock(&context.lock);
-
-            msg.command = COMMAND_TYPE_ORDER_BUTTON;
-            msg.args[0] = BUTTON_TYPE_CAB;
-            msg.args[1] = i;
-            err = tcp_socket->send(tcp_socket, &msg);
-            if (err != 0)
-            {
-                LOG_ERROR("send err = %d", err);
-            }
-            err = tcp_socket->recv(tcp_socket, &msg);
-            if (err != 0)
-            {
-                LOG_ERROR("recv err = %d", err);
-            }
-            if (msg.args[0])
-            {
-                cab_buttons[i] = true;
-            }
-            LOG_INFO("Info loop\n");
+            LOG_ERROR("send err = %d", err);
         }
 
-        struct Message msg = {.command = COMMAND_TYPE_FLOOR_SENSOR};
-        tcp_socket->send(tcp_socket, &msg);
-        tcp_socket->recv(tcp_socket, &msg);
-        current_floor = msg.args[1];
-
-        if (current_state == ELEVATOR_STATE_MOVING && current_floor == target_floor && msg.args[0])
+        uint8_t hall_down_floor_states[FLOOR_COUNT];
+        err = tcp_socket->vfptr->get_button_signals(tcp_socket, BUTTON_TYPE_HALL_DOWN, hall_down_floor_states);
+        if (err != 0)
         {
-            tcp_socket->send(tcp_socket, &msg_motor_stop);
+            LOG_ERROR("send err = %d", err);
+        }
+
+        pthread_mutex_lock(&context.lock);
+        for (size_t i = 0; i < FLOOR_COUNT; ++i)
+        {
+            context.floor_states[i] |= hall_up_floor_states[i] | (hall_down_floor_states[i] << 1);
+        }
+        pthread_mutex_unlock(&context.lock);
+
+        err = tcp_socket->vfptr->get_button_signals(tcp_socket, BUTTON_TYPE_CAB, cab_buttons);
+        if (err != 0)
+        {
+            LOG_ERROR("send err = %d", err);
+        }
+
+        LOG_INFO("Info loop\n");
+
+        err = tcp_socket->vfptr->get_floor_sensor_signal(tcp_socket);
+        if (err != -ENOFLOOR)
+        {
+            current_floor = err;
+        }
+
+        if (current_state == ELEVATOR_STATE_MOVING && current_floor == target_floor)
+        {
+            tcp_socket->vfptr->set_motor_direction(tcp_socket, 0);
             current_state = ELEVATOR_STATE_IDLE;
             cab_buttons[target_floor] = false;
             // TODO: Open doors
@@ -150,7 +118,7 @@ void *thread_routine(void *args)
                 current_state = ELEVATOR_STATE_MOVING;
                 if (target_floor > current_floor)
                 {
-                    err = tcp_socket->send(tcp_socket, &msg_motor_up);
+                    err = tcp_socket->vfptr->set_motor_direction(tcp_socket, 1);
                     if (err != 0)
                     {
                         LOG_ERROR("recv err = %d", err);
@@ -158,7 +126,7 @@ void *thread_routine(void *args)
                 }
                 if (target_floor < current_floor)
                 {
-                    err = tcp_socket->send(tcp_socket, &msg_motor_down);
+                    err = tcp_socket->vfptr->set_motor_direction(tcp_socket, -1);
                     if (err != 0)
                     {
                         LOG_ERROR("recv err = %d", err);
@@ -187,7 +155,7 @@ void *thread_routine(void *args)
                 context.floor_states[target_floor] |= FLOOR_FLAG_LOCKED;
                 if (target_floor > current_floor)
                 {
-                    err = tcp_socket->send(tcp_socket, &msg_motor_up);
+                    err = tcp_socket->vfptr->set_motor_direction(tcp_socket, 1);
                     if (err != 0)
                     {
                         LOG_ERROR("recv err = %d", err);
@@ -195,7 +163,7 @@ void *thread_routine(void *args)
                 }
                 if (target_floor < current_floor)
                 {
-                    err = tcp_socket->send(tcp_socket, &msg_motor_down);
+                    err = tcp_socket->vfptr->set_motor_direction(tcp_socket, -1);
                     if (err != 0)
                     {
                         LOG_ERROR("recv err = %d", err);
@@ -213,7 +181,7 @@ int main()
 {
     pthread_mutex_init(&context.lock, NULL);
 
-    Socket sockets[ELEVATOR_COUNT];
+    socket_t sockets[ELEVATOR_COUNT];
     pthread_t pthread[ELEVATOR_COUNT];
     for (size_t i = 1; i < ELEVATOR_COUNT; ++i)
     {
@@ -226,19 +194,19 @@ int main()
         struct sockaddr_in bind_address = {
             .sin_addr.s_addr = htonl(INADDR_LOOPBACK), .sin_port = htons(MASTER_PORT), .sin_family = AF_INET};
 
-        socket_udp_init(&sockets[i], &addr_in, &bind_address);
+        slave_init(&sockets[i], &addr_in, &bind_address);
 
         pthread_create(&pthread[i], NULL, thread_routine, &sockets[i]);
     }
 
-    /*
-        struct sockaddr_in addr_in;
-        addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        addr_in.sin_port = htons(15659);
-        addr_in.sin_family = AF_INET;
+    struct sockaddr_in addr_in;
+    addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr_in.sin_port = htons(15659);
+    addr_in.sin_family = AF_INET;
 
-        socket_tcp_client_init(&sockets[0], &addr_in);
-    */
+    elevator_init(&sockets[0], &addr_in);
+    pthread_create(&pthread[0], NULL, thread_routine, &sockets[0]);
+
     for (size_t i = 1; i < ELEVATOR_COUNT; ++i)
     {
         pthread_join(pthread[i], NULL);

@@ -1,10 +1,8 @@
 
+#include <driver.h>
+#include <errno.h>
 #include <log.h>
-#include <network.h>
-
-#ifndef FLOOR_COUNT
-#define FLOOR_COUNT 4
-#endif
+#include <sys/time.h>
 
 #ifndef ELEVATOR_COUNT
 #define ELEVATOR_COUNT 1
@@ -27,9 +25,9 @@ typedef enum SlaveState
 int main(void)
 {
 
-    char cab_calls[FLOOR_COUNT];
-    Socket elevator_sock;
-    Socket master_sock;
+    uint8_t cab_calls[FLOOR_COUNT];
+    socket_t elevator_sock;
+    int master_sock_fd;
 
     struct sockaddr_in address;
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -39,10 +37,39 @@ int main(void)
     struct sockaddr_in bind_address = {
         .sin_addr.s_addr = htonl(INADDR_LOOPBACK), .sin_port = htons(SLAVE_PORT), .sin_family = AF_INET};
 
-    socket_udp_init(&master_sock, &address, &bind_address);
+    master_sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (master_sock_fd == -1)
+    {
+        return -errno;
+    }
+    int value = 1;
+    if (setsockopt(master_sock_fd, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value)) == -1)
+    {
+        int err = -errno;
+        (void)shutdown(master_sock_fd, SHUT_RDWR);
+        return err;
+    }
+
+    struct timeval time;
+    time.tv_usec = 0;
+    time.tv_sec = 0xfffffffe;
+    if (setsockopt(master_sock_fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time)) == -1)
+    {
+        int err = -errno;
+        (void)shutdown(master_sock_fd, SHUT_RDWR);
+        return err;
+    }
+
+    if (bind(master_sock_fd, (struct sockaddr *)&bind_address, sizeof(bind_address)) == -1)
+    {
+        int err = -errno;
+        (void)shutdown(master_sock_fd, SHUT_RDWR);
+        return err;
+    }
 
     address.sin_port = htons(15657);
-    socket_tcp_client_init(&elevator_sock, &address);
+    elevator_init(&elevator_sock, &address);
+    address.sin_port = htons(MASTER_PORT);
 
     SlaveState state = SLAVE_STATE_CONNECTED;
 
@@ -51,90 +78,24 @@ int main(void)
         while (state == SLAVE_STATE_CONNECTED)
         {
             int err = 0;
-            for (size_t i = 0; i < FLOOR_COUNT; ++i)
-            {
-                struct Message msg = {.command = COMMAND_TYPE_ORDER_BUTTON, .args = {BUTTON_TYPE_CAB, i}};
-                err = elevator_sock.send(&elevator_sock, &msg);
-                if (err != 0)
-                {
-                    LOG_ERROR("err = %d", err);
-                }
-                err = elevator_sock.recv(&elevator_sock, &msg);
-                if (err != 0)
-                {
-                    LOG_ERROR("err = %d", err);
-                }
-                cab_calls[i] |= msg.args[0];
-            }
 
             struct Message msg;
-            err = master_sock.recv(&master_sock, &msg);
-            if (err != 0)
-            {
-                LOG_ERROR("err = %d", err);
-            }
-            if (err == 0)
-            {
-                if (msg.command == COMMAND_TYPE_ORDER_BUTTON &&
-                    (msg.args[0] == BUTTON_TYPE_HALL_UP || msg.args[0] == BUTTON_TYPE_HALL_DOWN))
-                {
 
-                    err = elevator_sock.send(&elevator_sock, &msg);
-                    if (err != 0)
-                    {
-                        LOG_ERROR("err = %d", err);
-                    }
-                    err = elevator_sock.recv(&elevator_sock, &msg);
-                    if (err != 0)
-                    {
-                        LOG_ERROR("err = %d", err);
-                    }
-                    if (msg.args[0] == 1)
-                    {
-                        LOG_INFO("HALL BUTTON\n");
-                    }
-                    err = master_sock.send(&master_sock, &msg);
-                    if (err != 0)
-                    {
-                        LOG_ERROR("err = %d", err);
-                    }
-                }
-                else if (msg.command == COMMAND_TYPE_ORDER_BUTTON && msg.args[0] == BUTTON_TYPE_CAB)
-                {
-                    msg.args[0] = cab_calls[msg.args[1]];
-                    err = master_sock.send(&master_sock, &msg);
-                    if (err != 0)
-                    {
-                        LOG_ERROR("err = %d", err);
-                    }
-                }
-                else if (msg.command > 5)
-                {
-                    err = elevator_sock.send(&elevator_sock, &msg);
-                    if (err != 0)
-                    {
-                        LOG_ERROR("err = %d\n", err);
-                    }
-                    err = elevator_sock.recv(&elevator_sock, &msg);
-                    if (err != 0)
-                    {
-                        LOG_ERROR("err = %d\n", err);
-                    }
-                    err = master_sock.send(&master_sock, &msg);
-                    if (err != 0)
-                    {
-                        LOG_ERROR("err = %d\n", err);
-                    }
-                }
-                else
-                {
-                    err = elevator_sock.send(&elevator_sock, &msg);
-                    if (err != 0)
-                    {
-                        LOG_ERROR("err = %d\n", err);
-                    }
-                }
+            do
+            {
+            } while (recvfrom(master_sock_fd, &msg, sizeof(msg), MSG_NOSIGNAL, NULL, NULL) == -1);
+            err = send(elevator_sock.fd, &msg, sizeof(msg), MSG_NOSIGNAL);
+            uint8_t floor = msg.args[1];
+            if (msg.command > 5)
+            {
+                err = recv(elevator_sock.fd, &msg, sizeof(msg), MSG_NOSIGNAL);
             }
+            if (msg.command == COMMAND_TYPE_ORDER_BUTTON && msg.args[0] == BUTTON_TYPE_CAB)
+            {
+                cab_calls[floor] = msg.args[0];
+            }
+
+            err = sendto(master_sock_fd, &msg, sizeof(msg), MSG_NOSIGNAL, (struct sockaddr *)&address, sizeof(address));
         }
         while (state == SLAVE_STATE_DISCONNECTED)
         {
