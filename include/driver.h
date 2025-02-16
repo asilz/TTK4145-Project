@@ -14,6 +14,7 @@ typedef enum ButtonType
     BUTTON_TYPE_HALL_UP = 0,
     BUTTON_TYPE_HALL_DOWN,
     BUTTON_TYPE_CAB,
+    BUTTON_TYPE_MAX,
 } ButtonType;
 
 typedef enum CommandType
@@ -28,12 +29,20 @@ typedef enum CommandType
     COMMAND_TYPE_FLOOR_SENSOR,
     COMMAND_TYPE_STOP_BUTTON,
     COMMAND_TYPE_OBSTRUCTION_SWITCH,
+
+    COMMAND_TYPE_ORDER_BUTTON_ALL,
 } CommandType;
 
 struct Message
 {
     int8_t command;
     int8_t args[3];
+};
+
+struct Packet
+{
+    uint8_t command;
+    uint8_t args[FLOOR_COUNT];
 };
 
 typedef struct socket_t
@@ -50,9 +59,11 @@ struct socket_vtable_t_
     int (*set_button_lamp)(socket_t *sock, ButtonType buttonType, uint8_t floor, uint8_t value);
     int (*set_floor_indicator)(socket_t *sock, uint8_t floor);
     int (*set_door_open_lamp)(socket_t *sock, uint8_t direction);
-    int (*get_button_signals)(socket_t *sock, ButtonType buttonType, uint8_t *floor_states);
+    int (*get_button_signals)(socket_t *sock, uint8_t *floor_states);
     int (*get_floor_sensor_signal)(socket_t *sock);
     int (*get_obstruction_signal)(socket_t *sock);
+
+    
 };
 
 int slave_init(socket_t *sock, struct sockaddr_in *address, const struct sockaddr_in *bind_address);

@@ -2,6 +2,7 @@
 #include <driver.h>
 #include <errno.h>
 #include <log.h>
+#include <string.h>
 #include <sys/time.h>
 
 #ifndef ELEVATOR_COUNT
@@ -25,7 +26,6 @@ typedef enum SlaveState
 int main(void)
 {
 
-    uint8_t cab_calls[FLOOR_COUNT];
     socket_t elevator_sock;
     int master_sock_fd;
 
@@ -51,8 +51,8 @@ int main(void)
     }
 
     struct timeval time;
-    time.tv_usec = 0;
-    time.tv_sec = 0xfffffffe;
+    time.tv_usec = 10000;
+    time.tv_sec = 0;
     if (setsockopt(master_sock_fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time)) == -1)
     {
         int err = -errno;
@@ -75,29 +75,62 @@ int main(void)
 
     while (1)
     {
-        while (state == SLAVE_STATE_CONNECTED)
+        uint8_t floor_calls[FLOOR_COUNT] = {0};
+
+        int err = 0;
+        for (size_t i = 0; i < FLOOR_COUNT; ++i)
         {
-            int err = 0;
+            for (size_t j = 0; j < BUTTON_TYPE_MAX; ++j)
+            {
+                struct Message msg;
+                err = send(elevator_sock.fd, &(struct Message){.command = COMMAND_TYPE_ORDER_BUTTON, .args = {j, i}},
+                           sizeof(msg), MSG_NOSIGNAL);
+                err = recv(elevator_sock.fd, &msg, sizeof(msg), MSG_NOSIGNAL);
+                // floor_calls[i] = 0; // Asil: This has to be fixed when disconnected state is implemented
+                floor_calls[i] |= msg.args[0] << j;
+            }
+        }
+        if (floor_calls[0])
+        {
+            LOG_INFO("Hall call at floor 0\n");
+        }
+        if (state == SLAVE_STATE_CONNECTED)
+        {
 
-            struct Message msg;
-
+            struct Packet packet;
             do
             {
-            } while (recvfrom(master_sock_fd, &msg, sizeof(msg), MSG_NOSIGNAL, NULL, NULL) == -1);
-            err = send(elevator_sock.fd, &msg, sizeof(msg), MSG_NOSIGNAL);
-            uint8_t floor = msg.args[1];
-            if (msg.command > 5)
+            } while (recvfrom(master_sock_fd, &packet, sizeof(packet), MSG_NOSIGNAL, NULL, NULL) == -1);
+            if (packet.command == COMMAND_TYPE_FLOOR_SENSOR)
             {
-                err = recv(elevator_sock.fd, &msg, sizeof(msg), MSG_NOSIGNAL);
+                LOG_INFO("recv floor sensor command\n");
             }
-            if (msg.command == COMMAND_TYPE_ORDER_BUTTON && msg.args[0] == BUTTON_TYPE_CAB)
+            if (packet.command == COMMAND_TYPE_ORDER_BUTTON_ALL)
             {
-                cab_calls[floor] = msg.args[0];
+                memcpy((uint8_t *)(&packet) + 1, floor_calls, sizeof(floor_calls));
+                err = sendto(master_sock_fd, &packet, sizeof(packet), MSG_NOSIGNAL, (struct sockaddr *)&address,
+                             sizeof(address));
+                continue;
+            }
+            if (packet.command == COMMAND_TYPE_ORDER_BUTTON)
+            {
+                continue;
+            }
+            err = send(elevator_sock.fd, &packet, sizeof(struct Message), MSG_NOSIGNAL);
+            // uint8_t floor = msg.args[1];
+            if (packet.command > 5)
+            {
+                err = recv(elevator_sock.fd, &packet, sizeof(struct Message), MSG_NOSIGNAL);
             }
 
-            err = sendto(master_sock_fd, &msg, sizeof(msg), MSG_NOSIGNAL, (struct sockaddr *)&address, sizeof(address));
+            err = sendto(master_sock_fd, &packet, sizeof(packet), MSG_NOSIGNAL, (struct sockaddr *)&address,
+                         sizeof(address));
+            if (err == -1)
+            {
+                LOG_INFO("slave sendto failed %d\n", errno);
+            }
         }
-        while (state == SLAVE_STATE_DISCONNECTED)
+        if (state == SLAVE_STATE_DISCONNECTED)
         {
         }
     }

@@ -57,15 +57,8 @@ void *thread_routine(void *args)
     while (1)
     {
 
-        uint8_t hall_up_floor_states[FLOOR_COUNT];
-        err = tcp_socket->vfptr->get_button_signals(tcp_socket, BUTTON_TYPE_HALL_UP, hall_up_floor_states);
-        if (err != 0)
-        {
-            LOG_ERROR("send err = %d", err);
-        }
-
-        uint8_t hall_down_floor_states[FLOOR_COUNT];
-        err = tcp_socket->vfptr->get_button_signals(tcp_socket, BUTTON_TYPE_HALL_DOWN, hall_down_floor_states);
+        uint8_t floor_states[FLOOR_COUNT] = {0};
+        err = tcp_socket->vfptr->get_button_signals(tcp_socket, floor_states);
         if (err != 0)
         {
             LOG_ERROR("send err = %d", err);
@@ -74,17 +67,10 @@ void *thread_routine(void *args)
         pthread_mutex_lock(&context.lock);
         for (size_t i = 0; i < FLOOR_COUNT; ++i)
         {
-            context.floor_states[i] |= hall_up_floor_states[i] | (hall_down_floor_states[i] << 1);
+            context.floor_states[i] |= (floor_states[i] & 1) | (floor_states[i] & 2);
+            cab_buttons[i] = floor_states[i] & 4;
         }
         pthread_mutex_unlock(&context.lock);
-
-        err = tcp_socket->vfptr->get_button_signals(tcp_socket, BUTTON_TYPE_CAB, cab_buttons);
-        if (err != 0)
-        {
-            LOG_ERROR("send err = %d", err);
-        }
-
-        LOG_INFO("Info loop\n");
 
         err = tcp_socket->vfptr->get_floor_sensor_signal(tcp_socket);
         if (err != -ENOFLOOR)
@@ -92,11 +78,22 @@ void *thread_routine(void *args)
             current_floor = err;
         }
 
+        /*
+
+        LOG_INFO("Info loop: current_floor = %zu, target_floor = %zu, current_state = %d, calls: %u, %u, %u | %u, "
+                 "%u, %u | %u, %u, %u | %u, %u, %u\n",
+                 current_floor, target_floor, current_state, context.floor_states[0] & 1, context.floor_states[0] & 2,
+                 context.floor_states[0] & 4, context.floor_states[1] & 1, context.floor_states[1] & 2,
+                 context.floor_states[1] & 4, context.floor_states[2] & 1, context.floor_states[2] & 2,
+                 context.floor_states[2] & 4, context.floor_states[3] & 1, context.floor_states[3] & 2,
+                 context.floor_states[3] & 4);
+                 */
+
         if (current_state == ELEVATOR_STATE_MOVING && current_floor == target_floor)
         {
             tcp_socket->vfptr->set_motor_direction(tcp_socket, 0);
             current_state = ELEVATOR_STATE_IDLE;
-            cab_buttons[target_floor] = false;
+            cab_buttons[target_floor] = 0;
             // TODO: Open doors
             pthread_mutex_lock(&context.lock);
             context.floor_states[target_floor] = 0;
@@ -199,6 +196,7 @@ int main()
         pthread_create(&pthread[i], NULL, thread_routine, &sockets[i]);
     }
 
+    /*
     struct sockaddr_in addr_in;
     addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr_in.sin_port = htons(15659);
@@ -206,6 +204,7 @@ int main()
 
     elevator_init(&sockets[0], &addr_in);
     pthread_create(&pthread[0], NULL, thread_routine, &sockets[0]);
+    */
 
     for (size_t i = 1; i < ELEVATOR_COUNT; ++i)
     {
