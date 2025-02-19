@@ -7,90 +7,46 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-static int elevator_set_motor_direction_(socket_t *sock, int8_t direction)
+struct ElevatorMessage
 {
-    if (send(sock->fd, &(struct Message){.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {direction}},
-             sizeof(struct Message), MSG_NOSIGNAL) == -1)
-    {
-        return -errno;
-    }
-    return 0;
-}
+    uint8_t command;
+    uint8_t args[3];
+};
 
-static int elevator_set_button_lamp_(socket_t *sock, ButtonType buttonType, uint8_t floor, uint8_t value)
+static int elevator_send_recv_(socket_t *sock, struct Packet *packet)
 {
-    if (send(sock->fd,
-             &(struct Message){.command = COMMAND_TYPE_ORDER_BUTTON_LIGHT, .args = {buttonType, floor, value}},
-             sizeof(struct Message), MSG_NOSIGNAL) == -1)
+    if (packet->command == COMMAND_TYPE_ORDER_BUTTON_ALL)
     {
-        return -errno;
-    }
-    return 0;
-}
-
-static int elevator_set_floor_indicator_(socket_t *sock, uint8_t floor)
-{
-    if (send(sock->fd, &(struct Message){.command = COMMAND_TYPE_FLOOR_INDICATOR, .args = {floor}},
-             sizeof(struct Message), MSG_NOSIGNAL) == -1)
-    {
-        return -errno;
-    }
-    return 0;
-}
-
-static int elevator_set_door_open_lamp_(socket_t *sock, uint8_t value)
-{
-    if (send(sock->fd, &(struct Message){.command = COMMAND_TYPE_DOOR_OPEN_LIGHT, .args = {value}},
-             sizeof(struct Message), MSG_NOSIGNAL) == -1)
-    {
-        return -errno;
-    }
-    return 0;
-}
-
-static int elevator_get_button_signals_(socket_t *sock, uint8_t *floor_states)
-{
-    for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
-    {
-        for (uint8_t j = 0; j < BUTTON_TYPE_MAX; ++j)
+        memset(packet->order_button_all_data.floor_states, 0, sizeof(packet->order_button_all_data.floor_states));
+        for (size_t i = 0; i < FLOOR_COUNT; ++i)
         {
-            struct Message msg = {.command = COMMAND_TYPE_ORDER_BUTTON, .args = {j, i}};
-            send(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL);
-            recv(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL);
-            floor_states[i] |= msg.args[0] << j;
+            for (size_t j = 0; j < BUTTON_TYPE_MAX; ++j)
+            {
+                struct ElevatorMessage msg;
+                send(sock->fd, &(struct ElevatorMessage){.command = COMMAND_TYPE_ORDER_BUTTON, .args = {j, i}},
+                     sizeof(msg), MSG_NOSIGNAL);
+                recv(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL);
+                // floor_calls[i] = 0; // Asil: This has to be fixed when disconnected state is implemented
+                packet->order_button_all_data.floor_states[i] |= msg.args[0] << j;
+            }
         }
+        return 0;
+    }
+    if (send(sock->fd, packet, sizeof(struct ElevatorMessage), MSG_NOSIGNAL) == -1)
+    {
+        return -errno;
+    }
+    if (packet->command > 5 && recv(sock->fd, packet, sizeof(struct ElevatorMessage), MSG_NOSIGNAL) == -1)
+    {
+        return -errno;
     }
     return 0;
-}
-
-static int elevator_get_floor_sensor_signal_(socket_t *sock)
-{
-    struct Message msg = {.command = COMMAND_TYPE_FLOOR_SENSOR};
-    send(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL);
-    recv(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL);
-    if (msg.args[0])
-    {
-        return msg.args[1];
-    }
-    return -ENOFLOOR;
-}
-
-static int elevator_get_obstruction_signal_(socket_t *sock)
-{
-    struct Message msg = {.command = COMMAND_TYPE_OBSTRUCTION_SWITCH};
-    send(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL);
-    recv(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL);
-    return msg.args[0];
 }
 
 static const struct socket_vtable_t_ elevator_vtable_ = {
-    .get_button_signals = elevator_get_button_signals_,
-    .get_floor_sensor_signal = elevator_get_floor_sensor_signal_,
-    .get_obstruction_signal = elevator_get_obstruction_signal_,
-    .set_button_lamp = elevator_set_button_lamp_,
-    .set_door_open_lamp = elevator_set_door_open_lamp_,
-    .set_floor_indicator = elevator_set_floor_indicator_,
-    .set_motor_direction = elevator_set_motor_direction_,
+    .send_recv = elevator_send_recv_,
+    .send = NULL,
+    .recv = NULL,
 };
 
 int elevator_init(socket_t *sock, const struct sockaddr_in *address)
@@ -125,121 +81,43 @@ int elevator_init(socket_t *sock, const struct sockaddr_in *address)
     return 0;
 }
 
-static int slave_set_motor_direction_(socket_t *sock, int8_t direction)
+static int node_udp_send_recv(socket_t *sock, struct Packet *packet)
 {
-    struct Packet msg;
+    uint8_t command = packet->command;
     do
     {
-        sendto(sock->fd, &(struct Packet){.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {direction}},
-               sizeof(struct Packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
-    } while (recvfrom(sock->fd, &msg, sizeof(struct Packet), MSG_NOSIGNAL, NULL, NULL) == -1 ||
-             msg.command != COMMAND_TYPE_MOTOR_DIRECTION);
+        sendto(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
+    } while (recvfrom(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, NULL, NULL) == -1 || packet->command != command);
     return 0;
 }
 
-static int slave_set_button_lamp_(socket_t *sock, ButtonType buttonType, uint8_t floor, uint8_t value)
+static int node_udp_send(socket_t *sock, const struct Packet *packet)
 {
-    struct Packet msg;
-    do
+    if (sendto(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address)) == -1)
     {
-        sendto(sock->fd,
-               &(struct Packet){.command = COMMAND_TYPE_ORDER_BUTTON_LIGHT, .args = {buttonType, floor, value}},
-               sizeof(struct Packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
-    } while (recvfrom(sock->fd, &msg, sizeof(struct Packet), MSG_NOSIGNAL, NULL, NULL) == -1 ||
-             msg.command != COMMAND_TYPE_ORDER_BUTTON_LIGHT);
-    return 0;
-}
-
-static int slave_set_floor_indicator_(socket_t *sock, uint8_t floor)
-{
-    struct Packet msg;
-    do
-    {
-        sendto(sock->fd, &(struct Packet){.command = COMMAND_TYPE_FLOOR_INDICATOR, .args = {floor}},
-               sizeof(struct Packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
-    } while (recvfrom(sock->fd, &msg, sizeof(struct Packet), MSG_NOSIGNAL, NULL, NULL) == -1 ||
-             msg.command != COMMAND_TYPE_FLOOR_INDICATOR);
-    return 0;
-}
-
-static int slave_set_door_open_lamp_(socket_t *sock, uint8_t value)
-{
-    struct Packet msg;
-    do
-    {
-        sendto(sock->fd, &(struct Packet){.command = COMMAND_TYPE_DOOR_OPEN_LIGHT, .args = {value}},
-               sizeof(struct Packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
-    } while (recvfrom(sock->fd, &msg, sizeof(struct Packet), MSG_NOSIGNAL, NULL, NULL) == -1 ||
-             msg.command != COMMAND_TYPE_DOOR_OPEN_LIGHT);
-    return 0;
-}
-
-static int slave_get_button_signals_(socket_t *sock, uint8_t *floor_states)
-{
-    struct Packet packet;
-    do
-    {
-        sendto(sock->fd, &(struct Packet){.command = COMMAND_TYPE_ORDER_BUTTON_ALL}, sizeof(struct Packet),
-               MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
-    } while (recvfrom(sock->fd, &packet, sizeof(packet), MSG_NOSIGNAL, NULL, NULL) == -1 ||
-             packet.command != COMMAND_TYPE_ORDER_BUTTON_ALL);
-    memcpy(floor_states, (uint8_t *)(&packet) + 1, FLOOR_COUNT);
-    if (floor_states[0])
-    {
-        LOG_INFO("get button signals: call at floor 0\n");
+        return -errno;
     }
+
     return 0;
 }
 
-static int slave_get_floor_sensor_signal_(socket_t *sock)
+static int node_udp_recv(socket_t *sock, struct Packet *packet)
 {
-    struct Packet msg;
-    bool retry = false;
-    do
+    if (recvfrom(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, NULL, NULL) == -1)
     {
-        if (retry)
-        {
-            LOG_INFO("Floor sensor retry %d\n", errno);
-        }
-        int err = sendto(sock->fd, &(struct Packet){.command = COMMAND_TYPE_FLOOR_SENSOR}, sizeof(struct Packet),
-                         MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
-        if (err == -1)
-        {
-            LOG_INFO("get floor signals send to failed %d\n", errno);
-        }
-        retry = true;
-    } while (recvfrom(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL, NULL, NULL) == -1 ||
-             msg.command != COMMAND_TYPE_FLOOR_SENSOR);
-    if (msg.args[0])
-    {
-        return msg.args[1];
+        return -errno;
     }
-    return -ENOFLOOR;
+
+    return 0;
 }
 
-static int slave_get_obstruction_signal_(socket_t *sock)
-{
-    struct Packet msg;
-    do
-    {
-        sendto(sock->fd, &(struct Packet){.command = COMMAND_TYPE_OBSTRUCTION_SWITCH}, sizeof(struct Packet),
-               MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
-    } while (recvfrom(sock->fd, &msg, sizeof(struct Packet), MSG_NOSIGNAL, NULL, NULL) == -1 ||
-             msg.command != COMMAND_TYPE_OBSTRUCTION_SWITCH);
-    return msg.args[0];
-}
-
-static const struct socket_vtable_t_ slave_vtable_ = {
-    .get_button_signals = slave_get_button_signals_,
-    .get_floor_sensor_signal = slave_get_floor_sensor_signal_,
-    .get_obstruction_signal = slave_get_obstruction_signal_,
-    .set_button_lamp = slave_set_button_lamp_,
-    .set_door_open_lamp = slave_set_door_open_lamp_,
-    .set_floor_indicator = slave_set_floor_indicator_,
-    .set_motor_direction = slave_set_motor_direction_,
+static const struct socket_vtable_t_ node_udp_vtable_ = {
+    .send_recv = node_udp_send_recv,
+    .send = node_udp_send,
+    .recv = node_udp_recv,
 };
 
-int slave_init(socket_t *sock, struct sockaddr_in *address, const struct sockaddr_in *bind_address)
+int node_udp_init(socket_t *sock, const struct sockaddr_in *address, const struct sockaddr_in *bind_address)
 {
     sock->address = *(struct sockaddr *)address;
     sock->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -272,7 +150,7 @@ int slave_init(socket_t *sock, struct sockaddr_in *address, const struct sockadd
         return err;
     }
 
-    sock->vfptr = &slave_vtable_;
+    sock->vfptr = &node_udp_vtable_;
 
     return 0;
 }

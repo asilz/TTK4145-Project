@@ -92,7 +92,7 @@ void *thread_routine(void *args)
         if (current_state == ELEVATOR_STATE_MOVING && current_floor == target_floor)
         {
             packet.command = COMMAND_TYPE_MOTOR_DIRECTION;
-            packet.motor_direction_data.motor_direction = 0;
+            packet.motor_direction_data.motor_direction = -1;
             tcp_socket->vfptr->send_recv(tcp_socket, &packet);
             current_state = ELEVATOR_STATE_IDLE;
             cab_buttons[target_floor] = 0;
