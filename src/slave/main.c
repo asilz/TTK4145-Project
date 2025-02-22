@@ -5,10 +5,6 @@
 #include <string.h>
 #include <sys/time.h>
 
-#ifndef ELEVATOR_COUNT
-#define ELEVATOR_COUNT 1
-#endif
-
 #ifndef MASTER_PORT
 #define MASTER_PORT 17532
 #endif
@@ -17,11 +13,11 @@
 #define SLAVE_PORT 17533
 #endif
 
-typedef enum SlaveState
+typedef enum slave_state_e
 {
     SLAVE_STATE_CONNECTED = 0,
     SLAVE_STATE_DISCONNECTED = 1
-} SlaveState;
+} slave_state_e;
 
 int main(void)
 {
@@ -40,19 +36,19 @@ int main(void)
     address.sin_port = htons(15657);
     elevator_init(&elevator_sock, &address);
 
-    SlaveState state = SLAVE_STATE_CONNECTED;
+    slave_state_e state = SLAVE_STATE_CONNECTED;
 
     while (1)
     {
         if (state == SLAVE_STATE_CONNECTED)
         {
-            struct Packet packet;
+            struct packet_t packet;
 
-            while (master_sock.vfptr->recv(&master_sock, &packet) != 0)
+            while (socket_recv(&master_sock, &packet) != 0)
             {
             }
-            elevator_sock.vfptr->send_recv(&elevator_sock, &packet);
-            master_sock.vfptr->send(&master_sock, &packet);
+            socket_send_recv(&elevator_sock, &packet);
+            socket_send(&master_sock, &packet);
         }
         if (state == SLAVE_STATE_DISCONNECTED)
         {

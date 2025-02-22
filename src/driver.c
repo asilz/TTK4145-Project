@@ -13,21 +13,35 @@ struct ElevatorMessage
     uint8_t args[3];
 };
 
-static int elevator_send_recv_(socket_t *sock, struct Packet *packet)
+static int elevator_send_recv_(socket_t *sock, struct packet_t *packet)
 {
     if (packet->command == COMMAND_TYPE_ORDER_BUTTON_ALL)
     {
         memset(packet->order_button_all_data.floor_states, 0, sizeof(packet->order_button_all_data.floor_states));
-        for (size_t i = 0; i < FLOOR_COUNT; ++i)
+        for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
         {
-            for (size_t j = 0; j < BUTTON_TYPE_MAX; ++j)
+            for (uint8_t j = 0; j < BUTTON_TYPE_MAX; ++j)
             {
                 struct ElevatorMessage msg;
                 send(sock->fd, &(struct ElevatorMessage){.command = COMMAND_TYPE_ORDER_BUTTON, .args = {j, i}},
                      sizeof(msg), MSG_NOSIGNAL);
                 recv(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL);
-                // floor_calls[i] = 0; // Asil: This has to be fixed when disconnected state is implemented
                 packet->order_button_all_data.floor_states[i] |= msg.args[0] << j;
+            }
+        }
+        return 0;
+    }
+    if (packet->command == COMMAND_TYPE_ORDER_BUTTON_LIGHT_ALL)
+    {
+        for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
+        {
+            for (uint8_t j = 0; j < BUTTON_TYPE_MAX; ++j)
+            {
+                send(sock->fd,
+                     &(struct ElevatorMessage){
+                         .command = COMMAND_TYPE_ORDER_BUTTON_LIGHT,
+                         .args = {j, i, (packet->order_button_light_all_data.floor_lights[i] >> j) & 1}},
+                     sizeof(struct ElevatorMessage), MSG_NOSIGNAL);
             }
         }
         return 0;
@@ -36,7 +50,16 @@ static int elevator_send_recv_(socket_t *sock, struct Packet *packet)
     {
         return -errno;
     }
-    if (packet->command > 5 && recv(sock->fd, packet, sizeof(struct ElevatorMessage), MSG_NOSIGNAL) == -1)
+    if (packet->command == COMMAND_TYPE_MOTOR_DIRECTION)
+    {
+        LOG_INFO("MOTOR set\n");
+    }
+    if (packet->command < 6)
+    {
+        return 0;
+    }
+
+    if (recv(sock->fd, packet, sizeof(struct ElevatorMessage), MSG_NOSIGNAL) == -1)
     {
         return -errno;
     }
@@ -58,7 +81,7 @@ int elevator_init(socket_t *sock, const struct sockaddr_in *address)
     }
 
     struct timeval time;
-    time.tv_sec = UINT32_MAX;
+    time.tv_sec = 0x8ffffffcU;
     time.tv_usec = 0;
 
     if (setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time)) == -1)
@@ -81,7 +104,7 @@ int elevator_init(socket_t *sock, const struct sockaddr_in *address)
     return 0;
 }
 
-static int node_udp_send_recv(socket_t *sock, struct Packet *packet)
+static int node_udp_send_recv(socket_t *sock, struct packet_t *packet)
 {
     uint8_t command = packet->command;
     do
@@ -91,7 +114,7 @@ static int node_udp_send_recv(socket_t *sock, struct Packet *packet)
     return 0;
 }
 
-static int node_udp_send(socket_t *sock, const struct Packet *packet)
+static int node_udp_send(socket_t *sock, const struct packet_t *packet)
 {
     if (sendto(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address)) == -1)
     {
@@ -101,7 +124,7 @@ static int node_udp_send(socket_t *sock, const struct Packet *packet)
     return 0;
 }
 
-static int node_udp_recv(socket_t *sock, struct Packet *packet)
+static int node_udp_recv(socket_t *sock, struct packet_t *packet)
 {
     if (recvfrom(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, NULL, NULL) == -1)
     {
@@ -154,3 +177,7 @@ int node_udp_init(socket_t *sock, const struct sockaddr_in *address, const struc
 
     return 0;
 }
+
+int socket_send(socket_t *sock, const struct packet_t *packet) { return sock->vfptr->send(sock, packet); }
+int socket_recv(socket_t *sock, struct packet_t *packet) { return sock->vfptr->recv(sock, packet); }
+int socket_send_recv(socket_t *sock, struct packet_t *packet) { return sock->vfptr->send_recv(sock, packet); }
