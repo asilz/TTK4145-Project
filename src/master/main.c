@@ -38,6 +38,13 @@ static struct
 {
     uint8_t floor_states[FLOOR_COUNT];
     pthread_mutex_t lock;
+
+    pthread_cond_t cond;
+    pthread_cond_t active_threads_cond;
+    pthread_mutex_t elevator_lock;
+    size_t active_threads;
+    bool is_slave;
+    socket_t elevator_sock;
 } context = {.floor_states = {0}};
 
 void *thread_routine(void *args)
@@ -58,6 +65,16 @@ void *thread_routine(void *args)
 
     while (1)
     {
+        if (current_state == ELEVATOR_STATE_IDLE)
+        {
+            pthread_mutex_lock(&context.elevator_lock);
+            while (context.is_slave)
+            {
+                pthread_cond_wait(&context.cond, &context.elevator_lock);
+            }
+            context.active_threads++;
+            pthread_mutex_unlock(&context.elevator_lock);
+        }
 
         struct packet_t packet = {.command = COMMAND_TYPE_ORDER_BUTTON_ALL};
         pthread_mutex_lock(&context.lock);
@@ -133,6 +150,13 @@ void *thread_routine(void *args)
                 context.floor_states[target_floor] = 0;
                 pthread_mutex_unlock(&context.lock);
                 current_state = ELEVATOR_STATE_IDLE;
+
+                pthread_mutex_lock(&context.elevator_lock);
+                if (--context.active_threads == 0)
+                {
+                    pthread_cond_signal(&context.active_threads_cond);
+                }
+                pthread_mutex_unlock(&context.elevator_lock);
             }
         }
 
@@ -221,6 +245,34 @@ void *thread_routine(void *args)
             }
         }
         pthread_mutex_unlock(&context.lock);
+    }
+}
+
+void *slave_routine(void *args)
+{
+    socket_t *socket = ((socket_t *)(args));
+
+    while (1)
+    {
+        struct packet_t packet;
+
+        while (socket_recv(socket, &packet) != 0)
+        {
+        }
+        pthread_mutex_lock(&context.elevator_lock);
+        while (context.active_threads > 0)
+        {
+            pthread_cond_wait(&context.active_threads_cond, &context.elevator_lock);
+        }
+        do
+        {
+            socket_send_recv(&context.elevator_sock, &packet);
+            socket_send(socket, &packet);
+        } while (socket_recv(socket, &packet) == 0);
+        context.is_slave = false;
+        pthread_cond_broadcast(&context.cond);
+
+        pthread_mutex_unlock(&context.elevator_lock);
     }
 }
 
