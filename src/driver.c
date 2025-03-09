@@ -13,6 +13,8 @@ struct ElevatorMessage
     uint8_t args[3];
 };
 
+#define RETRY_COUNT 5
+
 static int elevator_send_recv_(socket_t *sock, struct packet_t *packet)
 {
     if (packet->command == COMMAND_TYPE_ORDER_BUTTON_ALL)
@@ -106,11 +108,19 @@ int elevator_init(socket_t *sock, const struct sockaddr_in *address)
 
 static int node_udp_send_recv(socket_t *sock, struct packet_t *packet)
 {
+    socklen_t size;
+    size_t retries = RETRY_COUNT;
     uint8_t command = packet->command;
     do
     {
+        if (--retries == 0)
+        {
+            return -errno;
+        }
         sendto(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
-    } while (recvfrom(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, NULL, NULL) == -1 || packet->command != command);
+
+    } while (recvfrom(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, &sock->address, &size) == -1 ||
+             packet->command != command);
     return 0;
 }
 
@@ -120,13 +130,13 @@ static int node_udp_send(socket_t *sock, const struct packet_t *packet)
     {
         return -errno;
     }
-
     return 0;
 }
 
 static int node_udp_recv(socket_t *sock, struct packet_t *packet)
 {
-    if (recvfrom(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, NULL, NULL) == -1)
+    socklen_t size;
+    if (recvfrom(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, &sock->address, &size) == -1)
     {
         return -errno;
     }
