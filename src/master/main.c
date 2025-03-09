@@ -17,7 +17,7 @@
 #endif
 
 #ifndef SLAVE_PORT
-#define SLAVE_PORT 17533
+#define SLAVE_PORT 20000
 #endif
 
 enum floor_flags_t
@@ -45,21 +45,20 @@ static struct
     size_t active_threads;
     bool is_slave;
     socket_t elevator_sock;
-} context = {.floor_states = {0}};
+} context = {.floor_states = {0}, .active_threads = 0};
 
 void *thread_routine(void *args)
 {
+    int err = 0;
     socket_t *socket = ((socket_t *)(args));
     size_t current_floor = 0;
     size_t target_floor = 0;
     uint8_t cab_buttons[FLOOR_COUNT] = {0};
 
-    struct packet_t packet_reload_config = {.command = COMMAND_TYPE_RELOAD_CONFIG};
-    int err = socket_send_recv(socket, &packet_reload_config);
-    if (err != 0)
-    {
-        LOG_ERROR("send err = %d", err);
-    }
+    pthread_mutex_lock(&context.elevator_lock);
+    ++context.active_threads;
+    pthread_mutex_unlock(&context.elevator_lock);
+
     enum elevator_state_t current_state = ELEVATOR_STATE_IDLE;
     struct timespec door_timer;
 
@@ -68,6 +67,10 @@ void *thread_routine(void *args)
         if (current_state == ELEVATOR_STATE_IDLE)
         {
             pthread_mutex_lock(&context.elevator_lock);
+            if (--context.active_threads == 0)
+            {
+                pthread_cond_signal(&context.active_threads_cond);
+            }
             while (context.is_slave)
             {
                 pthread_cond_wait(&context.cond, &context.elevator_lock);
@@ -79,12 +82,22 @@ void *thread_routine(void *args)
         struct packet_t packet = {.command = COMMAND_TYPE_ORDER_BUTTON_ALL};
         pthread_mutex_lock(&context.lock);
         memcpy(packet.order_button_all_data.floor_states, context.floor_states, sizeof(context.floor_states));
+        pthread_mutex_unlock(&context.lock);
         err = socket_send_recv(socket, &packet);
         if (err != 0)
         {
             LOG_ERROR("send err = %d", err);
+            if (current_state != ELEVATOR_STATE_IDLE)
+            {
+                pthread_mutex_lock(&context.lock);
+                context.floor_states[target_floor] &= ~(1 << 2);
+                pthread_mutex_unlock(&context.lock);
+                current_state = ELEVATOR_STATE_IDLE;
+            }
+            continue;
         }
 
+        pthread_mutex_lock(&context.lock);
         for (size_t i = 0; i < FLOOR_COUNT; ++i)
         {
             context.floor_states[i] |=
@@ -99,19 +112,28 @@ void *thread_routine(void *args)
         if (err != 0)
         {
             LOG_ERROR("send err = %d", err);
+            if (current_state != ELEVATOR_STATE_IDLE)
+            {
+                pthread_mutex_lock(&context.lock);
+                context.floor_states[target_floor] &= ~(1 << 2);
+                pthread_mutex_unlock(&context.lock);
+                current_state = ELEVATOR_STATE_IDLE;
+            }
+            continue;
         }
         if (packet.floor_sensor_data.output.at_floor)
         {
             current_floor = packet.floor_sensor_data.output.floor;
         }
 
-        LOG_INFO("Info loop: current_floor = %zu, target_floor = %zu, current_state = %d, calls: %u, %u, %u | %u, "
+        LOG_INFO("Info loop: socket_fd = %d, current_floor = %zu, target_floor = %zu, current_state = %d, calls: %u, "
+                 "%u, %u | %u, "
                  "%u, %u | %u, %u, %u | %u, %u, %u\n",
-                 current_floor, target_floor, current_state, context.floor_states[0] & 1, context.floor_states[0] & 2,
-                 context.floor_states[0] & 4, context.floor_states[1] & 1, context.floor_states[1] & 2,
-                 context.floor_states[1] & 4, context.floor_states[2] & 1, context.floor_states[2] & 2,
-                 context.floor_states[2] & 4, context.floor_states[3] & 1, context.floor_states[3] & 2,
-                 context.floor_states[3] & 4);
+                 socket->fd, current_floor, target_floor, current_state, context.floor_states[0] & 1,
+                 context.floor_states[0] & 2, context.floor_states[0] & 4, context.floor_states[1] & 1,
+                 context.floor_states[1] & 2, context.floor_states[1] & 4, context.floor_states[2] & 1,
+                 context.floor_states[2] & 2, context.floor_states[2] & 4, context.floor_states[3] & 1,
+                 context.floor_states[3] & 2, context.floor_states[3] & 4);
 
         if (current_state == ELEVATOR_STATE_MOVING && current_floor == target_floor)
         {
@@ -150,13 +172,6 @@ void *thread_routine(void *args)
                 context.floor_states[target_floor] = 0;
                 pthread_mutex_unlock(&context.lock);
                 current_state = ELEVATOR_STATE_IDLE;
-
-                pthread_mutex_lock(&context.elevator_lock);
-                if (--context.active_threads == 0)
-                {
-                    pthread_cond_signal(&context.active_threads_cond);
-                }
-                pthread_mutex_unlock(&context.elevator_lock);
             }
         }
 
@@ -183,6 +198,14 @@ void *thread_routine(void *args)
                     if (err != 0)
                     {
                         LOG_ERROR("recv err = %d", err);
+                        if (current_state != ELEVATOR_STATE_IDLE)
+                        {
+                            pthread_mutex_lock(&context.lock);
+                            context.floor_states[target_floor] &= ~(1 << 2);
+                            pthread_mutex_unlock(&context.lock);
+                            current_state = ELEVATOR_STATE_IDLE;
+                        }
+                        continue;
                     }
                 }
                 if (target_floor < current_floor)
@@ -194,6 +217,14 @@ void *thread_routine(void *args)
                     if (err != 0)
                     {
                         LOG_ERROR("recv err = %d", err);
+                        if (current_state != ELEVATOR_STATE_IDLE)
+                        {
+                            pthread_mutex_lock(&context.lock);
+                            context.floor_states[target_floor] &= ~(1 << 2);
+                            pthread_mutex_unlock(&context.lock);
+                            current_state = ELEVATOR_STATE_IDLE;
+                        }
+                        continue;
                     }
                 }
                 break;
@@ -223,22 +254,42 @@ void *thread_routine(void *args)
                     packet.motor_direction_data.motor_direction = 1;
                     memset((uint8_t *)(&packet) + 2, 0,
                            sizeof(packet) - 2); // Sets the two last bytes in the packet to 0
+                    pthread_mutex_unlock(&context.lock);
                     err = socket_send_recv(socket, &packet);
                     if (err != 0)
                     {
                         LOG_ERROR("recv err = %d", err);
+                        if (current_state != ELEVATOR_STATE_IDLE)
+                        {
+                            pthread_mutex_lock(&context.lock);
+                            context.floor_states[target_floor] &= ~(1 << 2);
+                            pthread_mutex_unlock(&context.lock);
+                            current_state = ELEVATOR_STATE_IDLE;
+                        }
+                        continue;
                     }
+                    pthread_mutex_lock(&context.lock);
                 }
                 if (target_floor < current_floor)
                 {
                     packet.motor_direction_data.motor_direction = -1;
                     memset((uint8_t *)(&packet) + 2, 0,
                            sizeof(packet) - 2); // Sets the two last bytes in the packet to 0
+                    pthread_mutex_unlock(&context.lock);
                     err = socket_send_recv(socket, &packet);
                     if (err != 0)
                     {
                         LOG_ERROR("recv err = %d", err);
+                        if (current_state != ELEVATOR_STATE_IDLE)
+                        {
+                            pthread_mutex_lock(&context.lock);
+                            context.floor_states[target_floor] &= ~(1 << 2);
+                            pthread_mutex_unlock(&context.lock);
+                            current_state = ELEVATOR_STATE_IDLE;
+                        }
+                        continue;
                     }
+                    pthread_mutex_lock(&context.lock);
                 }
                 current_state = ELEVATOR_STATE_MOVING;
                 break;
@@ -260,6 +311,7 @@ void *slave_routine(void *args)
         {
         }
         pthread_mutex_lock(&context.elevator_lock);
+        context.is_slave = true;
         while (context.active_threads > 0)
         {
             pthread_cond_wait(&context.active_threads_cond, &context.elevator_lock);
@@ -270,44 +322,96 @@ void *slave_routine(void *args)
             socket_send(socket, &packet);
         } while (socket_recv(socket, &packet) == 0);
         context.is_slave = false;
+        packet.command = COMMAND_TYPE_MOTOR_DIRECTION;
+        packet.motor_direction_data.motor_direction = 0;
+        socket_send_recv(&context.elevator_sock, &packet);
         pthread_cond_broadcast(&context.cond);
 
         pthread_mutex_unlock(&context.elevator_lock);
     }
 }
 
-int main()
+static bool address_compare(const struct sockaddr_in *lhs, const struct sockaddr_in *rhs)
 {
+    if (lhs->sin_addr.s_addr != rhs->sin_addr.s_addr)
+    {
+        return lhs->sin_addr.s_addr > rhs->sin_addr.s_addr;
+    }
+    return lhs->sin_port > rhs->sin_port;
+}
+
+int main(int argc, char **argv)
+{
+    uint16_t ports[ELEVATOR_COUNT];
+
     pthread_mutex_init(&context.lock, NULL);
 
     socket_t sockets[ELEVATOR_COUNT];
+    socket_t slave_sockets[ELEVATOR_COUNT];
+    pthread_t slave_pthread[ELEVATOR_COUNT];
     pthread_t pthread[ELEVATOR_COUNT];
-    for (size_t i = 1; i < ELEVATOR_COUNT; ++i)
-    {
-        struct sockaddr_in addr_in;
-        addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        addr_in.sin_port = htons(SLAVE_PORT);
-        addr_in.sin_family = AF_INET;
-
-        struct sockaddr_in bind_address = {
-            .sin_addr.s_addr = htonl(INADDR_LOOPBACK), .sin_port = htons(MASTER_PORT), .sin_family = AF_INET};
-
-        node_udp_init(&sockets[i], &addr_in, &bind_address);
-
-        pthread_create(&pthread[i], NULL, thread_routine, &sockets[i]);
-    }
 
     struct sockaddr_in addr_in;
     addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr_in.sin_port = htons(15657);
     addr_in.sin_family = AF_INET;
 
-    elevator_init(&sockets[0], &addr_in);
-    pthread_create(&pthread[0], NULL, thread_routine, &sockets[0]);
-
-    for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+    for (size_t i = 0; i < ELEVATOR_COUNT + 1; ++i)
     {
-        pthread_join(pthread[i], NULL);
+        switch (getopt(argc, argv, "p:e:"))
+        {
+        case 'p':
+            sscanf(optarg, "%hd", &ports[i]);
+            break;
+        case 'e':
+            sscanf(optarg, "%hd", &addr_in.sin_port);
+            addr_in.sin_port = htons(addr_in.sin_port);
+            break;
+        case -1:
+            break; // Done parsing options
+        }
+    }
+
+    pthread_t elevator_thread;
+    elevator_init(&context.elevator_sock, &addr_in);
+    pthread_create(&elevator_thread, NULL, thread_routine, &context.elevator_sock);
+
+    addr_in.sin_port = htons(ports[0]);
+    for (size_t i = 1; i < ELEVATOR_COUNT; ++i)
+    {
+
+        struct sockaddr_in addr_in_;
+        addr_in_.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr_in_.sin_port = htons(ports[i] + 0xff);
+        addr_in_.sin_family = AF_INET;
+
+        if (!address_compare(&addr_in, &addr_in_))
+        {
+            continue;
+        }
+
+        struct sockaddr_in bind_address = {
+            .sin_addr.s_addr = htonl(INADDR_LOOPBACK), .sin_port = htons(ports[0]), .sin_family = AF_INET};
+
+        node_udp_init(&sockets[i], &addr_in_, &bind_address);
+
+        pthread_create(&pthread[i], NULL, thread_routine, &sockets[i]);
+    }
+
+    addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr_in.sin_port = htons(ports[0] + 10);
+    addr_in.sin_family = AF_INET;
+
+    struct sockaddr_in bind_address = (struct sockaddr_in){
+        .sin_addr.s_addr = htonl(INADDR_LOOPBACK), .sin_port = htons(ports[0] + 0xff), .sin_family = AF_INET};
+
+    node_udp_init(&slave_sockets[0], &addr_in, &bind_address);
+    pthread_create(&slave_pthread[0], NULL, slave_routine, &slave_sockets[0]);
+
+    // struct sockaddr_in addr_in;
+
+    while (1)
+    {
     }
 
     pthread_mutex_destroy(&context.lock);
