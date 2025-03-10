@@ -244,8 +244,19 @@ void *thread_routine(void *args)
             {
                 if (current_floor == target_floor)
                 {
-                    context.floor_states[target_floor] = 0; // TODO: Open doors
-                    continue;
+                    current_state = ELEVATOR_STATE_OPEN;
+                    packet.command = COMMAND_TYPE_DOOR_OPEN_LIGHT;
+                    packet.door_open_light_data.value = 1;
+
+                    pthread_mutex_unlock(&context.lock);
+                    socket_send_recv(socket, &packet);
+                    pthread_mutex_lock(&context.lock);
+
+                    clock_gettime(CLOCK_REALTIME, &door_timer);
+                    door_timer.tv_sec += 3;
+
+                    context.floor_states[target_floor] = 0;
+                    break;
                 }
                 packet.command = COMMAND_TYPE_MOTOR_DIRECTION;
                 context.floor_states[target_floor] |= FLOOR_FLAG_LOCKED;
@@ -266,7 +277,7 @@ void *thread_routine(void *args)
                             pthread_mutex_unlock(&context.lock);
                             current_state = ELEVATOR_STATE_IDLE;
                         }
-                        continue;
+                        break;
                     }
                     pthread_mutex_lock(&context.lock);
                 }
@@ -287,7 +298,7 @@ void *thread_routine(void *args)
                             pthread_mutex_unlock(&context.lock);
                             current_state = ELEVATOR_STATE_IDLE;
                         }
-                        continue;
+                        break;
                     }
                     pthread_mutex_lock(&context.lock);
                 }
