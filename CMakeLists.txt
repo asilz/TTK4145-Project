@@ -10,7 +10,6 @@ set(CMAKE_C_COMPILER "gcc")
 set(CMAKE_CXX_COMPILER "g++")
 
 add_executable(master)
-add_executable(slave)
 add_subdirectory(src)
 
 if(NOT DEFINED FLOOR_COUNT)
@@ -18,7 +17,7 @@ if(NOT DEFINED FLOOR_COUNT)
 endif()
 
 if(NOT DEFINED ELEVATOR_COUNT)
-    set(ELEVATOR_COUNT 1)
+    set(ELEVATOR_COUNT 3)
 endif()
 
 if(NOT DEFINED LOG_LEVEL)
@@ -36,7 +35,3 @@ endif()
 target_compile_definitions(master PRIVATE FLOOR_COUNT=${FLOOR_COUNT} ELEVATOR_COUNT=${ELEVATOR_COUNT} LOG_LEVEL=${LOG_LEVEL} SLAVE_PORT=${SLAVE_PORT} MASTER_PORT=${MASTER_PORT})
 target_compile_options(master PRIVATE -Wall -Werror=vla)
 target_include_directories(master PUBLIC include)
-
-target_compile_definitions(slave PRIVATE FLOOR_COUNT=${FLOOR_COUNT} ELEVATOR_COUNT=${ELEVATOR_COUNT} LOG_LEVEL=${LOG_LEVEL} SLAVE_PORT=${SLAVE_PORT} MASTER_PORT=${MASTER_PORT})
-target_compile_options(slave PRIVATE -Wall -Werror=vla)
-target_include_directories(slave PUBLIC include)
