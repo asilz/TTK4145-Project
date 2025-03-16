@@ -13,12 +13,19 @@
 
 struct socket_vtable_t_;
 
-typedef enum ButtonType
+enum button_type
 {
     BUTTON_TYPE_HALL_UP = 0,
     BUTTON_TYPE_HALL_DOWN,
     BUTTON_TYPE_CAB,
-} ButtonType;
+};
+
+enum motor_direction
+{
+    MOTOR_DIRECTION_DOWN = -1,
+    MOTOR_DIRECTION_STOP = 0,
+    MOTOR_DIRECTION_UP = 1
+};
 
 typedef struct socket_t
 {
@@ -27,7 +34,7 @@ typedef struct socket_t
 } socket_t;
 
 int elevator_init(socket_t *sock, const struct sockaddr_in *address);
-int elevator_set_motor_direction(socket_t *sock, int8_t direction);
+int elevator_set_motor_direction(socket_t *sock, enum motor_direction direction);
 int elevator_set_button_lamp(socket_t *sock, uint8_t floor_state, uint8_t floor);
 int elevator_set_floor_indicator(socket_t *sock, uint8_t floor);
 int elevator_set_door_open_lamp(socket_t *sock, uint8_t value);

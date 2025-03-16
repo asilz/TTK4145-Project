@@ -12,7 +12,7 @@ typedef struct packet
     int8_t args[3];
 } packet_t;
 
-typedef enum CommandType
+enum command_type
 {
     COMMAND_TYPE_RELOAD_CONFIG = 0,
     COMMAND_TYPE_MOTOR_DIRECTION,
@@ -24,7 +24,7 @@ typedef enum CommandType
     COMMAND_TYPE_FLOOR_SENSOR,
     COMMAND_TYPE_STOP_BUTTON,
     COMMAND_TYPE_OBSTRUCTION_SWITCH,
-} CommandType;
+};
 
 int elevator_reload_config(socket_t *sock)
 {
@@ -35,7 +35,7 @@ int elevator_reload_config(socket_t *sock)
     return 0;
 }
 
-int elevator_set_motor_direction(socket_t *sock, int8_t direction)
+int elevator_set_motor_direction(socket_t *sock, enum motor_direction direction)
 {
     if (send(sock->fd, &(packet_t){.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {direction}}, sizeof(packet_t),
              MSG_NOSIGNAL) == -1)

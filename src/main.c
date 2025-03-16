@@ -123,11 +123,11 @@ int main(int argc, char **argv)
     int err = elevator_get_floor_sensor_signal(&elevator_socket);
     if (err < 0)
     {
-        elevator_set_motor_direction(&elevator_socket, 1);
+        elevator_set_motor_direction(&elevator_socket, MOTOR_DIRECTION_UP);
         while (elevator_get_floor_sensor_signal(&elevator_socket) < 0)
         {
         }
-        elevator_set_motor_direction(&elevator_socket, 0);
+        elevator_set_motor_direction(&elevator_socket, MOTOR_DIRECTION_STOP);
     }
 
     while (1)
@@ -256,7 +256,7 @@ int main(int argc, char **argv)
         if (elevators[index].state == ELEVATOR_STATE_MOVING &&
             elevators[index].current_floor == elevators[index].target_floor)
         {
-            elevator_set_motor_direction(&elevator_socket, 0);
+            elevator_set_motor_direction(&elevator_socket, MOTOR_DIRECTION_STOP);
             elevators[index].state = ELEVATOR_STATE_OPEN;
             elevator_set_door_open_lamp(&elevator_socket, 1);
             clock_gettime(CLOCK_REALTIME, &door_timer);
@@ -304,12 +304,12 @@ int main(int argc, char **argv)
             if (elevators[index].target_floor > elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_MOVING;
-                elevator_set_motor_direction(&elevator_socket, 1);
+                elevator_set_motor_direction(&elevator_socket, MOTOR_DIRECTION_UP);
             }
             if (elevators[index].target_floor < elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_MOVING;
-                elevator_set_motor_direction(&elevator_socket, -1);
+                elevator_set_motor_direction(&elevator_socket, MOTOR_DIRECTION_DOWN);
             }
             if (elevators[index].target_floor == elevators[index].current_floor)
             {
@@ -376,12 +376,12 @@ int main(int argc, char **argv)
             if (elevators[index].target_floor > elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_MOVING;
-                elevator_set_motor_direction(&elevator_socket, 1);
+                elevator_set_motor_direction(&elevator_socket, MOTOR_DIRECTION_UP);
             }
             if (elevators[index].target_floor < elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_MOVING;
-                elevator_set_motor_direction(&elevator_socket, -1);
+                elevator_set_motor_direction(&elevator_socket, MOTOR_DIRECTION_DOWN);
             }
             if (elevators[index].target_floor == elevators[index].current_floor)
             {
