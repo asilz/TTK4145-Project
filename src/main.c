@@ -206,7 +206,7 @@ int main(int argc, char **argv)
                     {
                         if (elevators[i].floor_states[j] == 0)
                         {
-                            elevators[index].floor_states[j] = 0;
+                            elevators[index].floor_states[j] &= FLOOR_FLAG_BUTTON_CAB;
                         }
                         if (elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED)
                         {
