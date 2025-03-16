@@ -35,7 +35,7 @@ int elevator_reload_config(socket_t *sock)
     return 0;
 }
 
-int elevator_set_motor_direction_(socket_t *sock, int8_t direction)
+int elevator_set_motor_direction(socket_t *sock, int8_t direction)
 {
     if (send(sock->fd, &(packet_t){.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {direction}}, sizeof(packet_t),
              MSG_NOSIGNAL) == -1)
@@ -45,7 +45,7 @@ int elevator_set_motor_direction_(socket_t *sock, int8_t direction)
     return 0;
 }
 
-int elevator_set_button_lamp_(socket_t *sock, uint8_t floor_state, uint8_t floor)
+int elevator_set_button_lamp(socket_t *sock, uint8_t floor_state, uint8_t floor)
 {
 
     for (uint8_t i = BUTTON_TYPE_HALL_UP; i <= BUTTON_TYPE_CAB; ++i)
@@ -61,7 +61,7 @@ int elevator_set_button_lamp_(socket_t *sock, uint8_t floor_state, uint8_t floor
     return 0;
 }
 
-int elevator_set_floor_indicator_(socket_t *sock, uint8_t floor)
+int elevator_set_floor_indicator(socket_t *sock, uint8_t floor)
 {
     if (send(sock->fd, &(packet_t){.command = COMMAND_TYPE_FLOOR_INDICATOR, .args = {floor}}, sizeof(packet_t),
              MSG_NOSIGNAL) == -1)
@@ -71,7 +71,7 @@ int elevator_set_floor_indicator_(socket_t *sock, uint8_t floor)
     return 0;
 }
 
-int elevator_set_door_open_lamp_(socket_t *sock, uint8_t value)
+int elevator_set_door_open_lamp(socket_t *sock, uint8_t value)
 {
     if (send(sock->fd, &(packet_t){.command = COMMAND_TYPE_DOOR_OPEN_LIGHT, .args = {value}}, sizeof(packet_t),
              MSG_NOSIGNAL) == -1)
@@ -81,7 +81,7 @@ int elevator_set_door_open_lamp_(socket_t *sock, uint8_t value)
     return 0;
 }
 
-int elevator_get_button_signals_(socket_t *sock, uint8_t *floor_states)
+int elevator_get_button_signals(socket_t *sock, uint8_t *floor_states)
 {
     for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
     {
@@ -96,7 +96,7 @@ int elevator_get_button_signals_(socket_t *sock, uint8_t *floor_states)
     return 0;
 }
 
-int elevator_get_floor_sensor_signal_(socket_t *sock)
+int elevator_get_floor_sensor_signal(socket_t *sock)
 {
     packet_t msg = {.command = COMMAND_TYPE_FLOOR_SENSOR};
     send(sock->fd, &msg, sizeof(packet_t), MSG_NOSIGNAL);
@@ -108,7 +108,7 @@ int elevator_get_floor_sensor_signal_(socket_t *sock)
     return -ENOFLOOR;
 }
 
-int elevator_get_obstruction_signal_(socket_t *sock)
+int elevator_get_obstruction_signal(socket_t *sock)
 {
     packet_t msg = {.command = COMMAND_TYPE_OBSTRUCTION_SWITCH};
     send(sock->fd, &msg, 4, MSG_NOSIGNAL);

@@ -120,14 +120,14 @@ int main(int argc, char **argv)
 
     elevator_reload_config(&elevator_socket);
 
-    int err = elevator_get_floor_sensor_signal_(&elevator_socket);
+    int err = elevator_get_floor_sensor_signal(&elevator_socket);
     if (err < 0)
     {
-        elevator_set_motor_direction_(&elevator_socket, 1);
-        while (elevator_get_floor_sensor_signal_(&elevator_socket) < 0)
+        elevator_set_motor_direction(&elevator_socket, 1);
+        while (elevator_get_floor_sensor_signal(&elevator_socket) < 0)
         {
         }
-        elevator_set_motor_direction_(&elevator_socket, 0);
+        elevator_set_motor_direction(&elevator_socket, 0);
     }
 
     while (1)
@@ -136,13 +136,13 @@ int main(int argc, char **argv)
 
         elevator_t previous_state = elevators[index];
 
-        elevator_get_button_signals_(&elevator_socket, floor_states);
+        elevator_get_button_signals(&elevator_socket, floor_states);
         for (size_t i = 0; i < FLOOR_COUNT; ++i)
         {
             elevators[index].floor_states[i] |= floor_states[i];
             LOG_INFO("floor_state %zu = %u\n", i, elevators[index].floor_states[i]);
         }
-        int err = elevator_get_floor_sensor_signal_(&elevator_socket);
+        int err = elevator_get_floor_sensor_signal(&elevator_socket);
         if (err >= 0)
         {
             elevators[index].current_floor = err;
@@ -249,16 +249,16 @@ int main(int argc, char **argv)
         {
             if (elevators[index].floor_states[i] != previous_state.floor_states[i])
             {
-                elevator_set_button_lamp_(&elevator_socket, elevators[index].floor_states[i], i);
+                elevator_set_button_lamp(&elevator_socket, elevators[index].floor_states[i], i);
             }
         }
 
         if (elevators[index].state == ELEVATOR_STATE_MOVING &&
             elevators[index].current_floor == elevators[index].target_floor)
         {
-            elevator_set_motor_direction_(&elevator_socket, 0);
+            elevator_set_motor_direction(&elevator_socket, 0);
             elevators[index].state = ELEVATOR_STATE_OPEN;
-            elevator_set_door_open_lamp_(&elevator_socket, 1);
+            elevator_set_door_open_lamp(&elevator_socket, 1);
             clock_gettime(CLOCK_REALTIME, &door_timer);
             door_timer.tv_sec += 3;
         }
@@ -269,20 +269,19 @@ int main(int argc, char **argv)
             struct timespec current_time;
             clock_gettime(CLOCK_REALTIME, &current_time);
 
-            if (elevator_get_obstruction_signal_(&elevator_socket))
+            if (elevator_get_obstruction_signal(&elevator_socket))
             {
                 door_timer = current_time;
                 door_timer.tv_sec += 3;
             }
             else if (current_time.tv_sec > door_timer.tv_sec)
             {
-                elevator_set_door_open_lamp_(&elevator_socket, 0);
+                elevator_set_door_open_lamp(&elevator_socket, 0);
                 elevators[index].floor_states[elevators[index].target_floor] = 0;
                 elevators[index].locking_elevator[elevators[index].target_floor] = 255;
                 elevators[index].state = ELEVATOR_STATE_IDLE;
-                elevator_set_button_lamp_(&elevator_socket,
-                                          elevators[index].floor_states[elevators[index].target_floor],
-                                          elevators[index].target_floor);
+                elevator_set_button_lamp(&elevator_socket, elevators[index].floor_states[elevators[index].target_floor],
+                                         elevators[index].target_floor);
             }
         }
 
@@ -305,17 +304,17 @@ int main(int argc, char **argv)
             if (elevators[index].target_floor > elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_MOVING;
-                elevator_set_motor_direction_(&elevator_socket, 1);
+                elevator_set_motor_direction(&elevator_socket, 1);
             }
             if (elevators[index].target_floor < elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_MOVING;
-                elevator_set_motor_direction_(&elevator_socket, -1);
+                elevator_set_motor_direction(&elevator_socket, -1);
             }
             if (elevators[index].target_floor == elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_OPEN;
-                elevator_set_door_open_lamp_(&elevator_socket, 1);
+                elevator_set_door_open_lamp(&elevator_socket, 1);
                 clock_gettime(CLOCK_REALTIME, &door_timer);
                 door_timer.tv_sec += 3;
             }
@@ -377,17 +376,17 @@ int main(int argc, char **argv)
             if (elevators[index].target_floor > elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_MOVING;
-                elevator_set_motor_direction_(&elevator_socket, 1);
+                elevator_set_motor_direction(&elevator_socket, 1);
             }
             if (elevators[index].target_floor < elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_MOVING;
-                elevator_set_motor_direction_(&elevator_socket, -1);
+                elevator_set_motor_direction(&elevator_socket, -1);
             }
             if (elevators[index].target_floor == elevators[index].current_floor)
             {
                 elevators[index].state = ELEVATOR_STATE_OPEN;
-                elevator_set_door_open_lamp_(&elevator_socket, 1);
+                elevator_set_door_open_lamp(&elevator_socket, 1);
                 clock_gettime(CLOCK_REALTIME, &door_timer);
                 door_timer.tv_sec += 3;
             }
