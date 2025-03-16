@@ -1,0 +1,146 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Server0",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/home/asil/Documents/ttk4145/Simulator-v2/SimElevatorServer",
+            "args": [
+                "--port",
+                "15657"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+        },
+        {
+            "name": "Server1",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/home/asil/Documents/ttk4145/Simulator-v2/SimElevatorServer",
+            "args": [
+                "--port",
+                "15658"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+        },
+        {
+            "name": "Server2",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/home/asil/Documents/ttk4145/Simulator-v2/SimElevatorServer",
+            "args": [
+                "--port",
+                "15659"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+        },
+        {
+            "name": "Debug0",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/master",
+            "args": [
+                "-i",
+                "0",
+                "-p",
+                "20000",
+                "-p",
+                "30000",
+                "-p",
+                "40000",
+                "-e",
+                "15657"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+        },
+        {
+            "name": "Debug1",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/master",
+            "args": [
+                "-i",
+                "1",
+                "-p",
+                "20000",
+                "-p",
+                "30000",
+                "-p",
+                "40000",
+                "-e",
+                "15658"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+        },
+        {
+            "name": "Debug2",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/master",
+            "args": [
+                "-i",
+                "2",
+                "-p",
+                "20000",
+                "-p",
+                "30000",
+                "-p",
+                "40000",
+                "-e",
+                "15659"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Compound",
+            "configurations": [
+                "Debug0",
+                "Debug1",
+                "Debug2"
+            ]
+        },
+        {
+            "name": "CompoundWithServer",
+            "configurations": [
+                "Server0",
+                "Server1",
+                "Server2",
+                "Debug0",
+                "Debug1",
+                "Debug2"
+            ]
+        }
+    ]
+}
