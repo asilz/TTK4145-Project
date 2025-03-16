@@ -1,76 +1,120 @@
 #include <driver.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <log.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
 
-struct ElevatorMessage
+typedef struct packet
 {
-    uint8_t command;
-    uint8_t args[3];
+    int8_t command;
+    int8_t args[3];
+} packet_t;
+
+enum command_type
+{
+    COMMAND_TYPE_RELOAD_CONFIG = 0,
+    COMMAND_TYPE_MOTOR_DIRECTION,
+    COMMAND_TYPE_ORDER_BUTTON_LIGHT,
+    COMMAND_TYPE_FLOOR_INDICATOR,
+    COMMAND_TYPE_DOOR_OPEN_LIGHT,
+    COMMAND_TYPE_STOP_BUTTON_LIGHT,
+    COMMAND_TYPE_ORDER_BUTTON,
+    COMMAND_TYPE_FLOOR_SENSOR,
+    COMMAND_TYPE_STOP_BUTTON,
+    COMMAND_TYPE_OBSTRUCTION_SWITCH,
 };
 
-static int elevator_send_recv_(socket_t *sock, struct packet_t *packet)
+int elevator_reload_config(socket_t *sock)
 {
-    if (packet->command == COMMAND_TYPE_ORDER_BUTTON_ALL)
-    {
-        memset(packet->order_button_all_data.floor_states, 0, sizeof(packet->order_button_all_data.floor_states));
-        for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
-        {
-            for (uint8_t j = 0; j < BUTTON_TYPE_MAX; ++j)
-            {
-                struct ElevatorMessage msg;
-                send(sock->fd, &(struct ElevatorMessage){.command = COMMAND_TYPE_ORDER_BUTTON, .args = {j, i}},
-                     sizeof(msg), MSG_NOSIGNAL);
-                recv(sock->fd, &msg, sizeof(msg), MSG_NOSIGNAL);
-                packet->order_button_all_data.floor_states[i] |= msg.args[0] << j;
-            }
-        }
-        return 0;
-    }
-    if (packet->command == COMMAND_TYPE_ORDER_BUTTON_LIGHT_ALL)
-    {
-        for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
-        {
-            for (uint8_t j = 0; j < BUTTON_TYPE_MAX; ++j)
-            {
-                send(sock->fd,
-                     &(struct ElevatorMessage){
-                         .command = COMMAND_TYPE_ORDER_BUTTON_LIGHT,
-                         .args = {j, i, (packet->order_button_light_all_data.floor_lights[i] >> j) & 1}},
-                     sizeof(struct ElevatorMessage), MSG_NOSIGNAL);
-            }
-        }
-        return 0;
-    }
-    if (send(sock->fd, packet, sizeof(struct ElevatorMessage), MSG_NOSIGNAL) == -1)
-    {
-        return -errno;
-    }
-    if (packet->command == COMMAND_TYPE_MOTOR_DIRECTION)
-    {
-        LOG_INFO("MOTOR set\n");
-    }
-    if (packet->command < 6)
-    {
-        return 0;
-    }
-
-    if (recv(sock->fd, packet, sizeof(struct ElevatorMessage), MSG_NOSIGNAL) == -1)
+    if (send(sock->fd, &(packet_t){.command = COMMAND_TYPE_RELOAD_CONFIG}, sizeof(packet_t), MSG_NOSIGNAL) == -1)
     {
         return -errno;
     }
     return 0;
 }
 
-static const struct socket_vtable_t_ elevator_vtable_ = {
-    .send_recv = elevator_send_recv_,
-    .send = NULL,
-    .recv = NULL,
-};
+int elevator_set_motor_direction(socket_t *sock, enum motor_direction direction)
+{
+    if (send(sock->fd, &(packet_t){.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {direction}}, sizeof(packet_t),
+             MSG_NOSIGNAL) == -1)
+    {
+        return -errno;
+    }
+    return 0;
+}
+
+int elevator_set_button_lamp(socket_t *sock, uint8_t floor_state, uint8_t floor)
+{
+
+    for (uint8_t i = BUTTON_TYPE_HALL_UP; i <= BUTTON_TYPE_CAB; ++i)
+    {
+        if (send(sock->fd,
+                 &(packet_t){.command = COMMAND_TYPE_ORDER_BUTTON_LIGHT,
+                             .args = {i, floor, (floor_state & (1 << i)) != 0}},
+                 sizeof(packet_t), MSG_NOSIGNAL) == -1)
+        {
+            return -errno;
+        }
+    }
+    return 0;
+}
+
+int elevator_set_floor_indicator(socket_t *sock, uint8_t floor)
+{
+    if (send(sock->fd, &(packet_t){.command = COMMAND_TYPE_FLOOR_INDICATOR, .args = {floor}}, sizeof(packet_t),
+             MSG_NOSIGNAL) == -1)
+    {
+        return -errno;
+    }
+    return 0;
+}
+
+int elevator_set_door_open_lamp(socket_t *sock, uint8_t value)
+{
+    if (send(sock->fd, &(packet_t){.command = COMMAND_TYPE_DOOR_OPEN_LIGHT, .args = {value}}, sizeof(packet_t),
+             MSG_NOSIGNAL) == -1)
+    {
+        return -errno;
+    }
+    return 0;
+}
+
+int elevator_get_button_signals(socket_t *sock, uint8_t *floor_states)
+{
+    for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
+    {
+        for (uint8_t j = 0; j <= BUTTON_TYPE_CAB; ++j)
+        {
+            packet_t msg = {.command = COMMAND_TYPE_ORDER_BUTTON, .args = {j, i}};
+            send(sock->fd, &msg, sizeof(packet_t), MSG_NOSIGNAL);
+            recv(sock->fd, &msg, sizeof(packet_t), MSG_NOSIGNAL);
+            floor_states[i] |= msg.args[0] << j;
+        }
+    }
+    return 0;
+}
+
+int elevator_get_floor_sensor_signal(socket_t *sock)
+{
+    packet_t msg = {.command = COMMAND_TYPE_FLOOR_SENSOR};
+    send(sock->fd, &msg, sizeof(packet_t), MSG_NOSIGNAL);
+    recv(sock->fd, &msg, sizeof(packet_t), MSG_NOSIGNAL);
+    if (msg.args[0])
+    {
+        return msg.args[1];
+    }
+    return -ENOFLOOR;
+}
+
+int elevator_get_obstruction_signal(socket_t *sock)
+{
+    packet_t msg = {.command = COMMAND_TYPE_OBSTRUCTION_SWITCH};
+    send(sock->fd, &msg, 4, MSG_NOSIGNAL);
+    recv(sock->fd, &msg, 4, MSG_NOSIGNAL);
+    return msg.args[0];
+}
 
 int elevator_init(socket_t *sock, const struct sockaddr_in *address)
 {
@@ -81,7 +125,7 @@ int elevator_init(socket_t *sock, const struct sockaddr_in *address)
     }
 
     struct timeval time;
-    time.tv_sec = 0x8ffffffcU;
+    time.tv_sec = UINT32_MAX;
     time.tv_usec = 0;
 
     if (setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time)) == -1)
@@ -91,93 +135,12 @@ int elevator_init(socket_t *sock, const struct sockaddr_in *address)
         return err;
     }
 
-    sock->address = *(struct sockaddr *)address;
-    if (connect(sock->fd, &sock->address, sizeof(sock->address)) == -1)
+    if (connect(sock->fd, (struct sockaddr *)address, sizeof(*address)) == -1)
     {
         int err = -errno;
         (void)close(sock->fd);
         return err;
     }
 
-    sock->vfptr = &elevator_vtable_;
-
     return 0;
 }
-
-static int node_udp_send_recv(socket_t *sock, struct packet_t *packet)
-{
-    uint8_t command = packet->command;
-    do
-    {
-        sendto(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address));
-    } while (recvfrom(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, NULL, NULL) == -1 || packet->command != command);
-    return 0;
-}
-
-static int node_udp_send(socket_t *sock, const struct packet_t *packet)
-{
-    if (sendto(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, &sock->address, sizeof(sock->address)) == -1)
-    {
-        return -errno;
-    }
-
-    return 0;
-}
-
-static int node_udp_recv(socket_t *sock, struct packet_t *packet)
-{
-    if (recvfrom(sock->fd, packet, sizeof(*packet), MSG_NOSIGNAL, NULL, NULL) == -1)
-    {
-        return -errno;
-    }
-
-    return 0;
-}
-
-static const struct socket_vtable_t_ node_udp_vtable_ = {
-    .send_recv = node_udp_send_recv,
-    .send = node_udp_send,
-    .recv = node_udp_recv,
-};
-
-int node_udp_init(socket_t *sock, const struct sockaddr_in *address, const struct sockaddr_in *bind_address)
-{
-    sock->address = *(struct sockaddr *)address;
-    sock->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock->fd == -1)
-    {
-        return -errno;
-    }
-    int value = 1;
-    if (setsockopt(sock->fd, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value)) == -1)
-    {
-        int err = -errno;
-        (void)close(sock->fd);
-        return err;
-    }
-
-    struct timeval time;
-    time.tv_sec = 0;
-    time.tv_usec = 10000;
-    if (setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time)) == -1)
-    {
-        int err = -errno;
-        (void)close(sock->fd);
-        return err;
-    }
-
-    if (bind(sock->fd, (struct sockaddr *)bind_address, sizeof(*bind_address)) == -1)
-    {
-        int err = -errno;
-        (void)close(sock->fd);
-        return err;
-    }
-
-    sock->vfptr = &node_udp_vtable_;
-
-    return 0;
-}
-
-int socket_send(socket_t *sock, const struct packet_t *packet) { return sock->vfptr->send(sock, packet); }
-int socket_recv(socket_t *sock, struct packet_t *packet) { return sock->vfptr->recv(sock, packet); }
-int socket_send_recv(socket_t *sock, struct packet_t *packet) { return sock->vfptr->send_recv(sock, packet); }

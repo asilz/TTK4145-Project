@@ -1,5 +1,5 @@
 #include <assert.h>
-#include <driver2.h>
+#include <driver.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <log.h>

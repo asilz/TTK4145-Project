@@ -1,1 +1,1 @@
-target_sources(master PRIVATE main.c driver2.c)
+target_sources(master PRIVATE main.c driver.c)
