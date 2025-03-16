@@ -12,13 +12,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#ifndef FLOOR_COUNT
-#define FLOOR_COUNT 4
-#endif
-
-#ifndef ELEVATOR_COUNT
-#define ELEVATOR_COUNT 3
-#endif
+#define ELEVATOR_DISCONNECTED_TIME_SEC (6)
+#define DOOR_OPEN_TIME_SEC (3)
 
 enum floor_flags_t
 {
@@ -193,7 +188,8 @@ int main(int argc, char **argv)
 
         for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
         {
-            if (i == index || (elevator_times[i].tv_sec + 6 < elevator_times[index].tv_sec))
+            if (i == index ||
+                (elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
             {
                 continue;
             }
@@ -260,7 +256,7 @@ int main(int argc, char **argv)
             elevators[index].state = ELEVATOR_STATE_OPEN;
             elevator_set_door_open_lamp(&elevator_socket, 1);
             clock_gettime(CLOCK_REALTIME, &door_timer);
-            door_timer.tv_sec += 3;
+            door_timer.tv_sec += DOOR_OPEN_TIME_SEC;
         }
 
         clock_gettime(CLOCK_REALTIME, &elevator_times[index]);
@@ -272,7 +268,7 @@ int main(int argc, char **argv)
             if (elevator_get_obstruction_signal(&elevator_socket))
             {
                 door_timer = current_time;
-                door_timer.tv_sec += 3;
+                door_timer.tv_sec += DOOR_OPEN_TIME_SEC;
             }
             else if (current_time.tv_sec > door_timer.tv_sec)
             {
@@ -316,7 +312,7 @@ int main(int argc, char **argv)
                 elevators[index].state = ELEVATOR_STATE_OPEN;
                 elevator_set_door_open_lamp(&elevator_socket, 1);
                 clock_gettime(CLOCK_REALTIME, &door_timer);
-                door_timer.tv_sec += 3;
+                door_timer.tv_sec += DOOR_OPEN_TIME_SEC;
             }
             break;
         }
@@ -330,7 +326,7 @@ int main(int argc, char **argv)
             uint8_t do_call = FLOOR_FLAG_BUTTON_DOWN | FLOOR_FLAG_BUTTON_UP;
             for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
             {
-                if ((elevator_times[i].tv_sec + 6 < elevator_times[index].tv_sec))
+                if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
                 {
                     continue;
                 }
@@ -357,7 +353,7 @@ int main(int argc, char **argv)
             }
             for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
             {
-                if ((elevator_times[i].tv_sec + 6 < elevator_times[index].tv_sec))
+                if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
                 {
                     continue;
                 }
@@ -388,7 +384,7 @@ int main(int argc, char **argv)
                 elevators[index].state = ELEVATOR_STATE_OPEN;
                 elevator_set_door_open_lamp(&elevator_socket, 1);
                 clock_gettime(CLOCK_REALTIME, &door_timer);
-                door_timer.tv_sec += 3;
+                door_timer.tv_sec += DOOR_OPEN_TIME_SEC;
             }
             break;
         }
