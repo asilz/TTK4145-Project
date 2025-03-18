@@ -1,3 +1,6 @@
+#ifndef LOG_H
+#define LOG_H
+
 #include <stdio.h>
 
 #ifndef LOG_LEVEL
@@ -20,4 +23,6 @@
 #define LOG_ERROR(format, ...) printf(format " %s %d\n", __VA_ARGS__, __FILE__, __LINE__)
 #else
 #define LOG_ERROR(...)
+#endif
+
 #endif

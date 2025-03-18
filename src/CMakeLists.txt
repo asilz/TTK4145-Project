@@ -1,1 +1,1 @@
-target_sources(master PRIVATE main.c driver.c)
+target_sources(master PRIVATE main.c driver.c process.c elevator.c)

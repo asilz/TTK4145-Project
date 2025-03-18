@@ -1,5 +1,7 @@
+#ifndef DRIVER_H
+#define DRIVER_H
+
 #include <netinet/ip.h>
-#include <sys/socket.h>
 
 #ifndef FLOOR_COUNT
 #define FLOOR_COUNT 4
@@ -10,8 +12,6 @@
 #endif
 
 #define ENOFLOOR 41 // 41 is not an error code defined in the posix standard, so I will use it for my own error code
-
-struct socket_vtable_t_;
 
 enum button_type
 {
@@ -27,18 +27,16 @@ enum motor_direction
     MOTOR_DIRECTION_UP = 1
 };
 
-typedef struct socket_t
-{
-    int fd;
-    struct sockaddr address;
-} socket_t;
+typedef int socket_t;
 
-int elevator_init(socket_t *sock, const struct sockaddr_in *address);
-int elevator_set_motor_direction(socket_t *sock, enum motor_direction direction);
-int elevator_set_button_lamp(socket_t *sock, uint8_t floor_state, uint8_t floor);
-int elevator_set_floor_indicator(socket_t *sock, uint8_t floor);
-int elevator_set_door_open_lamp(socket_t *sock, uint8_t value);
-int elevator_get_button_signals(socket_t *sock, uint8_t *floor_states);
-int elevator_get_floor_sensor_signal(socket_t *sock);
-int elevator_get_obstruction_signal(socket_t *sock);
-int elevator_reload_config(socket_t *sock);
+int elevator_init(const struct sockaddr_in *address);
+int elevator_set_motor_direction(socket_t sock, enum motor_direction direction);
+int elevator_set_button_lamp(socket_t sock, uint8_t floor_state, uint8_t floor);
+int elevator_set_floor_indicator(socket_t sock, uint8_t floor);
+int elevator_set_door_open_lamp(socket_t sock, uint8_t value);
+int elevator_get_button_signals(socket_t sock, uint8_t *floor_states);
+int elevator_get_floor_sensor_signal(socket_t sock);
+int elevator_get_obstruction_signal(socket_t sock);
+int elevator_reload_config(socket_t sock);
+
+#endif
