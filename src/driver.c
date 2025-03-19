@@ -1,4 +1,5 @@
 #include <driver.h>
+#include <elevator.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <stdbool.h>
@@ -111,9 +112,44 @@ int elevator_get_floor_sensor_signal(socket_t sock)
 int elevator_get_obstruction_signal(socket_t sock)
 {
     packet_t msg = {.command = COMMAND_TYPE_OBSTRUCTION_SWITCH};
-    send(sock, &msg, 4, MSG_NOSIGNAL);
-    recv(sock, &msg, 4, MSG_NOSIGNAL);
+    send(sock, &msg, sizeof(msg), MSG_NOSIGNAL);
+    recv(sock, &msg, sizeof(msg), MSG_NOSIGNAL);
     return msg.args[0];
+}
+
+int elevator_update_state(socket_t sock, elevator_t *elevator_state)
+{
+    send(sock, &(packet_t){.command = COMMAND_TYPE_FLOOR_SENSOR, .args = {0}}, sizeof(packet_t), MSG_NOSIGNAL);
+    packet_t msg;
+    recv(sock, &msg, sizeof(msg), MSG_NOSIGNAL);
+    if (msg.args[0])
+    {
+        if (msg.args[1] != elevator_state->current_floor)
+        {
+            elevator_state->current_floor = msg.args[1];
+            send(sock, &(packet_t){.command = COMMAND_TYPE_FLOOR_INDICATOR, .args = {elevator_state->current_floor}},
+                 sizeof(packet_t), MSG_NOSIGNAL);
+        }
+    }
+
+    for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
+    {
+        for (uint8_t j = 0; j <= BUTTON_TYPE_CAB; ++j)
+        {
+            packet_t msg = {.command = COMMAND_TYPE_ORDER_BUTTON, .args = {j, i}};
+            send(sock, &msg, sizeof(packet_t), MSG_NOSIGNAL);
+            recv(sock, &msg, sizeof(packet_t), MSG_NOSIGNAL);
+            if ((elevator_state->floor_states[i] >> j & 1) != (msg.args[0] & 1))
+            {
+                if (send(sock, &(packet_t){.command = COMMAND_TYPE_ORDER_BUTTON_LIGHT, .args = {j, i, msg.args[0]}},
+                         sizeof(packet_t), MSG_NOSIGNAL) == -1)
+                {
+                    return -errno;
+                }
+            }
+            elevator_state->floor_states[i] |= msg.args[0] << j;
+        }
+    }
 }
 
 socket_t elevator_init(const struct sockaddr_in *address)
@@ -124,11 +160,8 @@ socket_t elevator_init(const struct sockaddr_in *address)
         return -errno;
     }
 
-    struct timeval time;
-    time.tv_sec = UINT32_MAX;
-    time.tv_usec = 0;
-
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time)) == -1)
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &(struct timeval){.tv_sec = 0, .tv_usec = 0},
+                   sizeof(struct timeval)) == -1)
     {
         int err = -errno;
         (void)close(sock);

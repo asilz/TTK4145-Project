@@ -27,6 +27,7 @@ enum motor_direction
     MOTOR_DIRECTION_UP = 1
 };
 
+struct elevator_t;
 typedef int socket_t;
 
 int elevator_init(const struct sockaddr_in *address);
@@ -38,5 +39,6 @@ int elevator_get_button_signals(socket_t sock, uint8_t *floor_states);
 int elevator_get_floor_sensor_signal(socket_t sock);
 int elevator_get_obstruction_signal(socket_t sock);
 int elevator_reload_config(socket_t sock);
+int elevator_update_state(socket_t sock, elevator_t *elevator_state);
 
 #endif

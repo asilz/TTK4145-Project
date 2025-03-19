@@ -18,6 +18,7 @@ typedef struct elevator_t
     uint8_t locking_elevator[FLOOR_COUNT];
     uint8_t current_floor;
     uint8_t target_floor;
+    uint8_t direction;
 } elevator_t;
 
 typedef struct system_state
