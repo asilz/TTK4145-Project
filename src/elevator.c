@@ -16,14 +16,22 @@ enum floor_flags_t
     FLOOR_FLAG_LOCKED = 0x8
 };
 
-void elevator_run(system_state_t *system, uint8_t index)
+void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
 {
     struct timespec door_timer;
     struct timespec elevator_times[ELEVATOR_COUNT];
-
-    uint16_t ports[ELEVATOR_COUNT] = {10042, 10043, 10044};
+    for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+    {
+        clock_gettime(CLOCK_REALTIME, &elevator_times[i]);
+    }
 
     elevator_reload_config(system->elevator_socket);
+
+    for (size_t i = 0; i < FLOOR_COUNT; ++i)
+    {
+        elevator_set_button_lamp(system->elevator_socket, system->elevators[index].floor_states[i], i);
+    }
+    elevator_set_floor_indicator(system->elevator_socket, system->elevators[index].current_floor);
 
     int err = elevator_get_floor_sensor_signal(system->elevator_socket);
     if (err < 0)
@@ -34,6 +42,8 @@ void elevator_run(system_state_t *system, uint8_t index)
         }
         elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_STOP);
     }
+
+    system->elevators[index].state = ELEVATOR_STATE_IDLE;
 
     while (1)
     {
@@ -154,6 +164,10 @@ void elevator_run(system_state_t *system, uint8_t index)
             }
         }
 
+        if (system->elevators[index].current_floor != previous_state.current_floor)
+        {
+            elevator_set_floor_indicator(system->elevator_socket, system->elevators[index].current_floor);
+        }
         for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
         {
             if (system->elevators[index].floor_states[i] != previous_state.floor_states[i])
@@ -238,50 +252,55 @@ void elevator_run(system_state_t *system, uint8_t index)
         for (system->elevators[index].target_floor = 0; system->elevators[index].target_floor < FLOOR_COUNT;
              ++system->elevators[index].target_floor)
         {
-            uint8_t do_call = FLOOR_FLAG_BUTTON_DOWN | FLOOR_FLAG_BUTTON_UP;
-            for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+            if (!((system->elevators[index].floor_states[system->elevators[index].target_floor] & FLOOR_FLAG_LOCKED) &&
+                  system->elevators[index].locking_elevator[index] == index))
             {
-                if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
+                uint8_t do_call = FLOOR_FLAG_BUTTON_DOWN | FLOOR_FLAG_BUTTON_UP;
+                for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+                {
+                    if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
+                    {
+                        continue;
+                    }
+                    if (system->elevators[i].floor_states[system->elevators[index].target_floor] &
+                        FLOOR_FLAG_BUTTON_CAB)
+                    {
+                        do_call = 0;
+                        break;
+                    }
+                    do_call &= system->elevators[i].floor_states[system->elevators[index].target_floor];
+                }
+                if (do_call == 0)
                 {
                     continue;
                 }
-                if (system->elevators[i].floor_states[system->elevators[index].target_floor] & FLOOR_FLAG_BUTTON_CAB)
+                if (!(system->elevators[index].floor_states[system->elevators[index].target_floor] & FLOOR_FLAG_LOCKED))
                 {
-                    do_call = 0;
+                    system->elevators[index].floor_states[system->elevators[index].target_floor] |= FLOOR_FLAG_LOCKED;
+                    system->elevators[index].locking_elevator[system->elevators[index].target_floor] = index;
                     break;
                 }
-                do_call &= system->elevators[i].floor_states[system->elevators[index].target_floor];
-            }
-            if (do_call == 0)
-            {
-                continue;
-            }
-            if (!(system->elevators[index].floor_states[system->elevators[index].target_floor] & FLOOR_FLAG_LOCKED))
-            {
-                system->elevators[index].floor_states[system->elevators[index].target_floor] |= FLOOR_FLAG_LOCKED;
-                system->elevators[index].locking_elevator[system->elevators[index].target_floor] = index;
-                break;
-            }
-            if (system->elevators[index].locking_elevator[system->elevators[index].target_floor] != index)
-            {
-                break;
-            }
-            for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
-            {
-                if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
+                if (system->elevators[index].locking_elevator[system->elevators[index].target_floor] != index)
+                {
+                    break;
+                }
+                for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+                {
+                    if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
+                    {
+                        continue;
+                    }
+                    if (system->elevators[index].locking_elevator[system->elevators[index].target_floor] !=
+                        system->elevators[i].locking_elevator[system->elevators[index].target_floor])
+                    {
+                        do_call = 0;
+                        break;
+                    }
+                }
+                if (do_call == 0)
                 {
                     continue;
                 }
-                if (system->elevators[index].locking_elevator[system->elevators[index].target_floor] !=
-                    system->elevators[i].locking_elevator[system->elevators[index].target_floor])
-                {
-                    do_call = 0;
-                    break;
-                }
-            }
-            if (do_call == 0)
-            {
-                continue;
             }
 
             if (system->elevators[index].target_floor > system->elevators[index].current_floor)

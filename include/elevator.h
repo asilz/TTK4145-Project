@@ -27,6 +27,6 @@ typedef struct system_state
     socket_t peer_socket;
 } system_state_t;
 
-void elevator_run(system_state_t *system, uint8_t index);
+void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index);
 
 #endif
