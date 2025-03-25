@@ -28,8 +28,9 @@ static void *signal_primary_routine(void *arg)
     sem_t *incrementing_sem = &shared_memory->primary_sem;
     sem_t *decrementing_sem = &shared_memory->backup_sem;
 
-    char command[512];
-    (void)snprintf(command, sizeof(command), "gnome-terminal -- bash -c \"./master -i %d -b 1; exec bash\"",
+    char command[128];
+    (void)snprintf(command, sizeof(command),
+                   "unset GTK_PATH; gnome-terminal -- bash -c \"./master -i %d -b 1; exec bash\"",
                    (uint16_t)(*((uint8_t *)arg)));
 
     struct timespec time;
@@ -58,8 +59,9 @@ static void *signal_backup_routine(void *arg)
     sem_t *decrementing_sem = &shared_memory->primary_sem;
     sem_t *incrementing_sem = &shared_memory->backup_sem;
 
-    char command[512];
-    (void)snprintf(command, sizeof(command), "gnome-terminal -- bash -c \"./master -i %d -b 0; exec bash\"",
+    char command[128];
+    (void)snprintf(command, sizeof(command),
+                   "unset GTK_PATH; gnome-terminal -- bash -c \"./master -i %d -b 0; exec bash\"",
                    (uint16_t)(*((uint8_t *)arg)));
 
     struct timespec time;
@@ -101,6 +103,7 @@ int process_init(uint8_t is_primary, uint8_t index)
         LOG_ERROR("mmap failed, err = %d\n", errno);
         return -errno;
     }
+    memset(shared_memory, sizeof(*shared_memory), 0);
 
     if (sem_trywait(&shared_memory->primary_sem) == -1 && errno == EINVAL)
     {
@@ -170,12 +173,12 @@ int process_init(uint8_t is_primary, uint8_t index)
         addr_in.sin_port = htons(15657 + index);
         shared_memory->state.elevator_socket = elevator_init(&addr_in);
 
-        pthread_create(&thread, NULL, signal_primary_routine, &index);
+        // pthread_create(&thread, NULL, signal_primary_routine, &index);
     }
     else
     {
-        pthread_create(&thread, NULL, signal_backup_routine, &index);
-        pthread_join(thread, NULL);
+        // pthread_create(&thread, NULL, signal_backup_routine, &index);
+        // pthread_join(thread, NULL);
         return 0;
     }
 

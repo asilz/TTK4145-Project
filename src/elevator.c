@@ -7,18 +7,45 @@
 
 #define ELEVATOR_DISCONNECTED_TIME_SEC (6)
 #define DOOR_OPEN_TIME_SEC (3)
+#define DISABLED_TIMEOUT (8)
 
 enum floor_flags_t
 {
-    FLOOR_FLAG_BUTTON_UP = 0x1,
-    FLOOR_FLAG_BUTTON_DOWN = 0x2,
-    FLOOR_FLAG_BUTTON_CAB = 0x4,
-    FLOOR_FLAG_LOCKED = 0x8
+    FLOOR_FLAG_BUTTON_UP = 1,
+    FLOOR_FLAG_BUTTON_DOWN = 1 << 1,
+    FLOOR_FLAG_BUTTON_CAB = 1 << 2,
+    FLOOR_FLAG_LOCKED_UP = 1 << 3,
+    FLOOR_FLAG_LOCKED_DOWN = 1 << 4
 };
 
-void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
+enum elevator_direction_t
+{
+    ELEVATOR_DIRECTION_UP = 0,
+    ELEVATOR_DIRECTION_DOWN = 1,
+};
+
+static enum floor_flags_t direction_to_floor_flag_button_(enum elevator_direction_t direction)
+{
+    static const uint8_t table[2] = {FLOOR_FLAG_BUTTON_UP, FLOOR_FLAG_BUTTON_DOWN};
+    return table[direction];
+}
+
+static enum floor_flags_t direction_to_floor_flag_locked_(enum elevator_direction_t direction)
+{
+    static const uint8_t table[2] = {FLOOR_FLAG_LOCKED_UP, FLOOR_FLAG_LOCKED_DOWN};
+    return table[direction];
+}
+
+static enum motor_direction direction_to_motor_direction_(enum elevator_direction_t direction)
+{
+    static const int8_t table[2] = {MOTOR_DIRECTION_UP, MOTOR_DIRECTION_DOWN};
+    return table[direction];
+}
+
+void elevator_run(system_state_t *system, const uint16_t *ports, const uint8_t index)
 {
     struct timespec door_timer;
+    struct timespec disable_timer;
     struct timespec elevator_times[ELEVATOR_COUNT];
     for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
     {
@@ -31,19 +58,23 @@ void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
     {
         elevator_set_button_lamp(system->elevator_socket, system->elevators[index].floor_states[i], i);
     }
-    elevator_set_floor_indicator(system->elevator_socket, system->elevators[index].current_floor);
 
     int err = elevator_get_floor_sensor_signal(system->elevator_socket);
     if (err < 0)
     {
         elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_UP);
-        while (elevator_get_floor_sensor_signal(system->elevator_socket) < 0)
+        while ((err = elevator_get_floor_sensor_signal(system->elevator_socket)) < 0)
         {
         }
         elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_STOP);
     }
+    system->elevators[index].current_floor = err;
+    system->elevators[index].disabled = 0;
+
+    elevator_set_floor_indicator(system->elevator_socket, system->elevators[index].current_floor);
 
     system->elevators[index].state = ELEVATOR_STATE_IDLE;
+    size_t broadcast_failed_count = 0;
 
     while (1)
     {
@@ -57,10 +88,10 @@ void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
             system->elevators[index].floor_states[i] |= floor_states[i];
             LOG_INFO("floor_state %zu = %u\n", i, system->elevators[index].floor_states[i]);
         }
-        int err = elevator_get_floor_sensor_signal(system->elevator_socket);
-        if (err >= 0)
+        int floor_signal_err = elevator_get_floor_sensor_signal(system->elevator_socket);
+        if (floor_signal_err >= 0)
         {
-            system->elevators[index].current_floor = err;
+            system->elevators[index].current_floor = floor_signal_err;
         }
 
         for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
@@ -76,13 +107,18 @@ void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
             if (err == -1)
             {
                 LOG_ERROR("broadcast error = %d\n", errno);
+                ++broadcast_failed_count;
+            }
+            else
+            {
+                broadcast_failed_count = 0;
             }
         }
 
         LOG_INFO("index = %" PRIu8 ", current_floor = %" PRIu8 ",target_floor = %" PRIu8 ", current_state = %" PRIu8
-                 "\n",
+                 ", elevator_direction = %" PRIu8 ", disabled = %" PRIu8 "\n",
                  index, system->elevators[index].current_floor, system->elevators[index].target_floor,
-                 system->elevators[index].state);
+                 system->elevators[index].state, system->elevators[index].direction, system->elevators[index].disabled);
 
         do
         {
@@ -118,48 +154,101 @@ void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
             }
             for (size_t j = 0; j < FLOOR_COUNT; ++j)
             {
-                if ((system->elevators[index].floor_states[j] & FLOOR_FLAG_BUTTON_DOWN) ||
-                    (system->elevators[index].floor_states[j] & FLOOR_FLAG_BUTTON_UP))
+                /* Check for button up updates */
+                if (system->elevators[index].floor_states[j] & FLOOR_FLAG_BUTTON_UP)
                 {
-                    if (system->elevators[index].floor_states[j] & FLOOR_FLAG_LOCKED)
+                    if (system->elevators[index].floor_states[j] & FLOOR_FLAG_LOCKED_UP)
                     {
-                        if (system->elevators[i].floor_states[j] == 0)
+                        if ((system->elevators[i].floor_states[j] & (FLOOR_FLAG_LOCKED_UP | FLOOR_FLAG_BUTTON_UP)) ==
+                            0) // if order was completed by a different elevator
                         {
-                            system->elevators[index].floor_states[j] &= FLOOR_FLAG_BUTTON_CAB;
+                            system->elevators[index].floor_states[j] &=
+                                FLOOR_FLAG_BUTTON_CAB | FLOOR_FLAG_LOCKED_DOWN | FLOOR_FLAG_BUTTON_DOWN;
                         }
-                        if (system->elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED)
+
+                        /* If both elevators have the floor locked. They need to ensure they agree on who takes the
+                         * order */
+                        if (system->elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED_UP)
                         {
-                            if (system->elevators[i].locking_elevator[j] < system->elevators[index].locking_elevator[j])
+                            if (system->elevators[i].locking_elevator[0][j] <
+                                    system->elevators[index].locking_elevator[0][j] ||
+                                system->elevators[index].disabled ||
+                                elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC <
+                                    elevator_times[index].tv_sec) // Prioritize based on index
                             {
-                                system->elevators[index].locking_elevator[j] = system->elevators[i].locking_elevator[j];
+                                system->elevators[index].locking_elevator[0][j] =
+                                    system->elevators[i].locking_elevator[0][j];
                             }
                             else
                             {
-                                system->elevators[i].locking_elevator[j] = system->elevators[index].locking_elevator[j];
+                                system->elevators[i].locking_elevator[0][j] =
+                                    system->elevators[index].locking_elevator[0][j];
                             }
                         }
                     }
-                    else
+                    /* If our elevator is not locking, but the other elevator is locking. We need to lock to communicate
+                     * that we agree that the elevator can take the call */
+                    else if (system->elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED_UP)
                     {
-                        if (system->elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED)
-                        {
-                            system->elevators[index].floor_states[j] |=
-                                system->elevators[i].floor_states[j] &
-                                (FLOOR_FLAG_BUTTON_DOWN | FLOOR_FLAG_BUTTON_UP | FLOOR_FLAG_LOCKED);
-                            system->elevators[index].locking_elevator[j] = system->elevators[i].locking_elevator[j];
-                        }
+                        system->elevators[index].floor_states[j] |= FLOOR_FLAG_LOCKED_UP;
+                        system->elevators[index].locking_elevator[0][j] = system->elevators[i].locking_elevator[0][j];
                     }
                 }
-                else
+                /* In this case our elevator is not aware of any calls, but will update its state if any other elevators
+                 * have a call registered*/
+                else if ((system->elevators[i].floor_states[j] & FLOOR_FLAG_BUTTON_UP) &&
+                         ((system->elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED_UP) == 0))
                 {
-                    if (((system->elevators[i].floor_states[j] & FLOOR_FLAG_BUTTON_DOWN) ||
-                         (system->elevators[i].floor_states[j] & FLOOR_FLAG_BUTTON_UP)) &&
-                        ((system->elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED) == 0))
+                    system->elevators[index].floor_states[j] |= FLOOR_FLAG_BUTTON_UP;
+                }
+
+                /* Check for button down updates */
+                if (system->elevators[index].floor_states[j] & FLOOR_FLAG_BUTTON_DOWN)
+                {
+                    if (system->elevators[index].floor_states[j] & FLOOR_FLAG_LOCKED_DOWN)
                     {
-                        system->elevators[index].floor_states[j] |=
-                            system->elevators[i].floor_states[j] &
-                            (FLOOR_FLAG_BUTTON_DOWN | FLOOR_FLAG_BUTTON_UP | FLOOR_FLAG_LOCKED);
+                        if ((system->elevators[i].floor_states[j] &
+                             (FLOOR_FLAG_LOCKED_DOWN | FLOOR_FLAG_BUTTON_DOWN)) ==
+                            0) // if order was completed by a different elevator
+                        {
+                            system->elevators[index].floor_states[j] &=
+                                FLOOR_FLAG_BUTTON_CAB | FLOOR_FLAG_LOCKED_UP | FLOOR_FLAG_BUTTON_UP;
+                        }
+
+                        /* If both elevators have the floor locked. They need to ensure they agree on who takes the
+                         * order */
+                        if (system->elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED_DOWN)
+                        {
+                            if (system->elevators[i].locking_elevator[1][j] <
+                                    system->elevators[index].locking_elevator[1][j] ||
+                                system->elevators[index].disabled ||
+                                elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC <
+                                    elevator_times[index].tv_sec) // Prioritize based on index
+                            {
+                                system->elevators[index].locking_elevator[1][j] =
+                                    system->elevators[i].locking_elevator[1][j];
+                            }
+                            else
+                            {
+                                system->elevators[i].locking_elevator[1][j] =
+                                    system->elevators[index].locking_elevator[1][j];
+                            }
+                        }
                     }
+                    /* If our elevator is not locking, but the other elevator is locking. We need to lock to communicate
+                     * that we agree that the elevator can take the call */
+                    else if (system->elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED_DOWN)
+                    {
+                        system->elevators[index].floor_states[j] |= FLOOR_FLAG_LOCKED_DOWN;
+                        system->elevators[index].locking_elevator[1][j] = system->elevators[i].locking_elevator[1][j];
+                    }
+                }
+                /* In this case our elevator is not aware of any calls, but will update its state if any other elevators
+                 * have a call registered*/
+                else if ((system->elevators[i].floor_states[j] & FLOOR_FLAG_BUTTON_DOWN) &&
+                         ((system->elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED_DOWN) == 0))
+                {
+                    system->elevators[index].floor_states[j] |= FLOOR_FLAG_BUTTON_DOWN;
                 }
             }
         }
@@ -176,14 +265,47 @@ void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
             }
         }
 
-        if (system->elevators[index].state == ELEVATOR_STATE_MOVING &&
-            system->elevators[index].current_floor == system->elevators[index].target_floor)
+        if (system->elevators[index].state == ELEVATOR_STATE_MOVING)
         {
-            elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_STOP);
-            system->elevators[index].state = ELEVATOR_STATE_OPEN;
-            elevator_set_door_open_lamp(system->elevator_socket, 1);
-            clock_gettime(CLOCK_REALTIME, &door_timer);
-            door_timer.tv_sec += DOOR_OPEN_TIME_SEC;
+            if (previous_state.current_floor != system->elevators[index].current_floor)
+            {
+                disable_timer = elevator_times[index];
+                system->elevators[index].disabled = 0;
+            }
+            else if (disable_timer.tv_sec + DISABLED_TIMEOUT < elevator_times[index].tv_sec)
+            {
+                system->elevators[index].disabled = 1;
+            }
+        }
+        if (system->elevators[index].state == ELEVATOR_STATE_MOVING && floor_signal_err >= 0)
+        {
+            /* We only stop if all elevators agree that we are taking this call */
+            uint8_t stop = 1;
+            if ((system->elevators[index].floor_states[system->elevators[index].current_floor] &
+                 FLOOR_FLAG_BUTTON_CAB) == 0 &&
+                system->elevators[index].current_floor != system->elevators[index].target_floor)
+            {
+                for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+                {
+                    if (((system->elevators[i].floor_states[system->elevators[index].current_floor] &
+                          direction_to_floor_flag_locked_(system->elevators[index].direction)) == 0) ||
+                        system->elevators[i].locking_elevator[system->elevators[index].direction]
+                                                             [system->elevators[index].current_floor] != index)
+                    {
+                        stop = 0;
+                        break;
+                    }
+                }
+            }
+            if (stop)
+            {
+                elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_STOP);
+                system->elevators[index].state = ELEVATOR_STATE_OPEN;
+                elevator_set_door_open_lamp(system->elevator_socket, 1);
+                clock_gettime(CLOCK_REALTIME, &door_timer);
+                disable_timer = door_timer;
+                door_timer.tv_sec += DOOR_OPEN_TIME_SEC;
+            }
         }
 
         clock_gettime(CLOCK_REALTIME, &elevator_times[index]);
@@ -191,6 +313,10 @@ void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
         {
             struct timespec current_time;
             clock_gettime(CLOCK_REALTIME, &current_time);
+            if (disable_timer.tv_sec + DISABLED_TIMEOUT < current_time.tv_sec)
+            {
+                system->elevators[index].disabled = 1;
+            }
 
             if (elevator_get_obstruction_signal(system->elevator_socket))
             {
@@ -199,13 +325,104 @@ void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
             }
             else if (current_time.tv_sec > door_timer.tv_sec)
             {
+                system->elevators[index].disabled = 0;
                 elevator_set_door_open_lamp(system->elevator_socket, 0);
-                system->elevators[index].floor_states[system->elevators[index].target_floor] = 0;
-                system->elevators[index].locking_elevator[system->elevators[index].target_floor] = 255;
-                system->elevators[index].state = ELEVATOR_STATE_IDLE;
+                system->elevators[index].floor_states[system->elevators[index].current_floor] &= ~FLOOR_FLAG_BUTTON_CAB;
+                if (system->elevators[index].locking_elevator[system->elevators[index].direction]
+                                                             [system->elevators[index].current_floor] == index)
+                {
+                    system->elevators[index]
+                        .locking_elevator[system->elevators[index].direction][system->elevators[index].current_floor] =
+                        255;
+                    system->elevators[index].floor_states[system->elevators[index].current_floor] &=
+                        ~direction_to_floor_flag_button_(system->elevators[index].direction) &
+                        ~direction_to_floor_flag_locked_(system->elevators[index].direction);
+                }
+
                 elevator_set_button_lamp(system->elevator_socket,
-                                         system->elevators[index].floor_states[system->elevators[index].target_floor],
-                                         system->elevators[index].target_floor);
+                                         system->elevators[index].floor_states[system->elevators[index].current_floor],
+                                         system->elevators[index].current_floor);
+                if (system->elevators[index].target_floor == system->elevators[index].current_floor)
+                {
+                    system->elevators[index].state = ELEVATOR_STATE_IDLE;
+                }
+                else
+                {
+                    system->elevators[index].state = ELEVATOR_STATE_MOVING;
+                    disable_timer = elevator_times[index];
+                    if (system->elevators[index].target_floor > system->elevators[index].current_floor)
+                    {
+                        elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_UP);
+                    }
+                    else
+                    {
+                        elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_DOWN);
+                    }
+                }
+            }
+        }
+
+        if (system->elevators[index].state != ELEVATOR_STATE_IDLE)
+        {
+
+            if (system->elevators[index].direction == ELEVATOR_DIRECTION_UP)
+            {
+                for (size_t i = system->elevators[index].current_floor; i < FLOOR_COUNT; i++)
+                {
+                    int elevator_count = 0;
+                    for (size_t j = 0; j < ELEVATOR_COUNT; ++j)
+                    {
+                        if ((system->elevators[j].floor_states[i] & FLOOR_FLAG_BUTTON_UP) != 0 &&
+                            ((system->elevators[j].floor_states[i] & FLOOR_FLAG_LOCKED_UP) == 0))
+                        {
+                            elevator_count++;
+                        }
+                    }
+                    if (elevator_count == ELEVATOR_COUNT)
+                    {
+                        system->elevators[index].floor_states[i] |= FLOOR_FLAG_LOCKED_UP;
+                        system->elevators[index].locking_elevator[0][i] = index;
+                        if (system->elevators[index].target_floor < i)
+                        {
+                            system->elevators[index].target_floor = i;
+                        }
+                    }
+                    if ((system->elevators[index].floor_states[i] & FLOOR_FLAG_BUTTON_CAB) &&
+                        system->elevators[index].target_floor < i)
+                    {
+                        system->elevators[index].target_floor = i;
+                    }
+                }
+            }
+
+            if (system->elevators[index].direction == ELEVATOR_DIRECTION_DOWN)
+            {
+                for (size_t i = system->elevators[index].current_floor; i > 0; i--)
+                {
+                    int elevator_count = 0;
+                    for (size_t j = 0; j < ELEVATOR_COUNT; ++j)
+                    {
+                        if ((system->elevators[j].floor_states[i] & FLOOR_FLAG_BUTTON_DOWN) != 0 &&
+                            ((system->elevators[j].floor_states[i] & FLOOR_FLAG_LOCKED_DOWN) == 0))
+                        {
+                            elevator_count++;
+                        }
+                    }
+                    if (elevator_count == ELEVATOR_COUNT)
+                    {
+                        system->elevators[index].floor_states[i] |= FLOOR_FLAG_LOCKED_DOWN;
+                        system->elevators[index].locking_elevator[1][i] = index;
+                        if (system->elevators[index].target_floor > i)
+                        {
+                            system->elevators[index].target_floor = i;
+                        }
+                    }
+                    if ((system->elevators[index].floor_states[i] & FLOOR_FLAG_BUTTON_CAB) &&
+                        system->elevators[index].target_floor > i)
+                    {
+                        system->elevators[index].target_floor = i;
+                    }
+                }
             }
         }
 
@@ -223,17 +440,22 @@ void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
                 continue;
             }
 
-            system->elevators[index].floor_states[system->elevators[index].target_floor] |= FLOOR_FLAG_LOCKED;
-            system->elevators[index].locking_elevator[system->elevators[index].target_floor] = index;
-
             if (system->elevators[index].target_floor > system->elevators[index].current_floor)
             {
+                system->elevators[index].direction = ELEVATOR_DIRECTION_UP;
+                system->elevators[index].locking_elevator[0][system->elevators[index].target_floor] = index;
+                system->elevators[index].floor_states[system->elevators[index].target_floor] |= FLOOR_FLAG_LOCKED_UP;
                 system->elevators[index].state = ELEVATOR_STATE_MOVING;
+                disable_timer = elevator_times[index];
                 elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_UP);
             }
             if (system->elevators[index].target_floor < system->elevators[index].current_floor)
             {
+                system->elevators[index].direction = ELEVATOR_DIRECTION_DOWN;
+                system->elevators[index].locking_elevator[1][system->elevators[index].target_floor] = index;
+                system->elevators[index].floor_states[system->elevators[index].target_floor] |= FLOOR_FLAG_LOCKED_DOWN;
                 system->elevators[index].state = ELEVATOR_STATE_MOVING;
+                disable_timer = elevator_times[index];
                 elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_DOWN);
             }
             if (system->elevators[index].target_floor == system->elevators[index].current_floor)
@@ -245,72 +467,138 @@ void elevator_run(system_state_t *system, const uint16_t *ports, uint8_t index)
             }
             break;
         }
+
         if (system->elevators[index].state != ELEVATOR_STATE_IDLE)
         {
             continue;
         }
+
         for (system->elevators[index].target_floor = 0; system->elevators[index].target_floor < FLOOR_COUNT;
              ++system->elevators[index].target_floor)
         {
-            if (!((system->elevators[index].floor_states[system->elevators[index].target_floor] & FLOOR_FLAG_LOCKED) &&
-                  system->elevators[index].locking_elevator[index] == index))
+            uint8_t do_call = FLOOR_FLAG_BUTTON_DOWN | FLOOR_FLAG_BUTTON_UP;
+            for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
             {
-                uint8_t do_call = FLOOR_FLAG_BUTTON_DOWN | FLOOR_FLAG_BUTTON_UP;
-                for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
-                {
-                    if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
-                    {
-                        continue;
-                    }
-                    if (system->elevators[i].floor_states[system->elevators[index].target_floor] &
-                        FLOOR_FLAG_BUTTON_CAB)
-                    {
-                        do_call = 0;
-                        break;
-                    }
-                    do_call &= system->elevators[i].floor_states[system->elevators[index].target_floor];
-                }
-                if (do_call == 0)
+                if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
                 {
                     continue;
                 }
-                if (!(system->elevators[index].floor_states[system->elevators[index].target_floor] & FLOOR_FLAG_LOCKED))
-                {
-                    system->elevators[index].floor_states[system->elevators[index].target_floor] |= FLOOR_FLAG_LOCKED;
-                    system->elevators[index].locking_elevator[system->elevators[index].target_floor] = index;
-                    break;
-                }
-                if (system->elevators[index].locking_elevator[system->elevators[index].target_floor] != index)
-                {
-                    break;
-                }
-                for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
-                {
-                    if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
-                    {
-                        continue;
-                    }
-                    if (system->elevators[index].locking_elevator[system->elevators[index].target_floor] !=
-                        system->elevators[i].locking_elevator[system->elevators[index].target_floor])
-                    {
-                        do_call = 0;
-                        break;
-                    }
-                }
-                if (do_call == 0)
-                {
-                    continue;
-                }
+                do_call &= system->elevators[i].floor_states[system->elevators[index].target_floor];
             }
+            if (do_call == 0)
+            {
+                continue;
+            }
+            if (do_call & FLOOR_FLAG_BUTTON_UP)
+            {
+                if (!(system->elevators[index].floor_states[system->elevators[index].target_floor] &
+                      FLOOR_FLAG_LOCKED_UP))
+                {
+                    system->elevators[index].floor_states[system->elevators[index].target_floor] |=
+                        FLOOR_FLAG_LOCKED_UP;
+                    system->elevators[index].locking_elevator[0][system->elevators[index].target_floor] = index;
+                    break;
+                }
+                for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+                {
+                    if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
+                    {
+                        if (system->elevators[index].locking_elevator[0][system->elevators[index].target_floor] == i)
+                        {
+                            system->elevators[index].locking_elevator[0][system->elevators[index].target_floor] = index;
+                        }
+                        continue;
+                    }
+                    if (system->elevators[i].disabled &&
+                        system->elevators[index].target_floor != system->elevators[i].current_floor)
+                    {
+                        if (system->elevators[index].locking_elevator[0][system->elevators[index].target_floor] == i)
+                        {
+                            system->elevators[index].locking_elevator[0][system->elevators[index].target_floor] = index;
+                        }
+                        continue;
+                    }
 
+                    if (system->elevators[index].locking_elevator[0][system->elevators[index].target_floor] !=
+                        system->elevators[i].locking_elevator[0][system->elevators[index].target_floor])
+                    {
+                        do_call = 0;
+                        break;
+                    }
+                }
+                if (system->elevators[index].locking_elevator[0][system->elevators[index].target_floor] != index)
+                {
+                    continue;
+                }
+                if (do_call == 0)
+                {
+                    continue;
+                }
+
+                system->elevators[index].direction = ELEVATOR_DIRECTION_UP;
+            }
+            else
+            {
+
+                if (!(system->elevators[index].floor_states[system->elevators[index].target_floor] &
+                      FLOOR_FLAG_LOCKED_DOWN))
+                {
+                    system->elevators[index].floor_states[system->elevators[index].target_floor] |=
+                        FLOOR_FLAG_LOCKED_DOWN;
+                    system->elevators[index].locking_elevator[1][system->elevators[index].target_floor] = index;
+                    break;
+                }
+                if (system->elevators[index].locking_elevator[1][system->elevators[index].target_floor] != index)
+                {
+                    break;
+                }
+                for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
+                {
+                    if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
+                    {
+                        if (system->elevators[index].locking_elevator[1][system->elevators[index].target_floor] == i)
+                        {
+                            system->elevators[index].locking_elevator[1][system->elevators[index].target_floor] = index;
+                        }
+                        continue;
+                    }
+                    if (system->elevators[i].disabled &&
+                        system->elevators[index].target_floor != system->elevators[i].current_floor)
+                    {
+                        if (system->elevators[index].locking_elevator[1][system->elevators[index].target_floor] == i)
+                        {
+                            system->elevators[index].locking_elevator[1][system->elevators[index].target_floor] = index;
+                        }
+                        continue;
+                    }
+                    if (system->elevators[index].locking_elevator[1][system->elevators[index].target_floor] !=
+                        system->elevators[i].locking_elevator[1][system->elevators[index].target_floor])
+                    {
+                        do_call = 0;
+                        break;
+                    }
+                }
+                if (system->elevators[index].locking_elevator[1][system->elevators[index].target_floor] != index)
+                {
+                    continue;
+                }
+                if (do_call == 0)
+                {
+                    continue;
+                }
+
+                system->elevators[index].direction = ELEVATOR_DIRECTION_DOWN;
+            }
             if (system->elevators[index].target_floor > system->elevators[index].current_floor)
             {
                 system->elevators[index].state = ELEVATOR_STATE_MOVING;
+                disable_timer = elevator_times[index];
                 elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_UP);
             }
             if (system->elevators[index].target_floor < system->elevators[index].current_floor)
             {
                 system->elevators[index].state = ELEVATOR_STATE_MOVING;
+                disable_timer = elevator_times[index];
                 elevator_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_DOWN);
             }
             if (system->elevators[index].target_floor == system->elevators[index].current_floor)

@@ -39,6 +39,6 @@ int elevator_get_button_signals(socket_t sock, uint8_t *floor_states);
 int elevator_get_floor_sensor_signal(socket_t sock);
 int elevator_get_obstruction_signal(socket_t sock);
 int elevator_reload_config(socket_t sock);
-int elevator_update_state(socket_t sock, elevator_t *elevator_state);
+int elevator_update_state(socket_t sock, struct elevator_t *elevator_state);
 
 #endif

@@ -8,17 +8,18 @@ enum elevator_state_t
 {
     ELEVATOR_STATE_IDLE = 0,
     ELEVATOR_STATE_MOVING = 1,
-    ELEVATOR_STATE_OPEN = 2
+    ELEVATOR_STATE_OPEN = 2,
 };
 
 typedef struct elevator_t
 {
     enum elevator_state_t state;
     uint8_t floor_states[FLOOR_COUNT];
-    uint8_t locking_elevator[FLOOR_COUNT];
+    uint8_t locking_elevator[2][FLOOR_COUNT];
     uint8_t current_floor;
     uint8_t target_floor;
     uint8_t direction;
+    uint8_t disabled;
 } elevator_t;
 
 typedef struct system_state
