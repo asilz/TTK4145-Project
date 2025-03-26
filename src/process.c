@@ -85,7 +85,7 @@ static void *signal_backup_routine(void *arg)
     return NULL;
 }
 
-int process_init(uint8_t is_primary, uint8_t index)
+int process_init(bool is_primary, const size_t index)
 {
     char file_name[7] = {index + 'A', '.', 't', 'e', 'm', 'p', '\0'};
 
@@ -171,7 +171,7 @@ int process_init(uint8_t is_primary, uint8_t index)
         }
 
         addr_in.sin_port = htons(15657 + index);
-        shared_memory->state.elevator_socket = elevator_init(&addr_in);
+        shared_memory->state.elevator_socket = driver_init(&addr_in);
 
         // pthread_create(&thread, NULL, signal_primary_routine, &index);
     }

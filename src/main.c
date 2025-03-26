@@ -14,7 +14,7 @@
 
 int main(int argc, char **argv)
 {
-    uint8_t index = 0;
+    size_t index = 0;
     uint8_t is_backup = 0;
 
     while (1)
@@ -22,7 +22,7 @@ int main(int argc, char **argv)
         switch (getopt(argc, argv, "i:b:"))
         {
         case 'i':
-            sscanf(optarg, "%" SCNu8, &index);
+            sscanf(optarg, "%lu", &index);
             break;
         case 'b':
             sscanf(optarg, "%" SCNu8, &is_backup);
