@@ -9,7 +9,7 @@ set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_C_COMPILER "gcc")
 set(CMAKE_CXX_COMPILER "g++")
 
-add_executable(master)
+add_executable(elevator)
 add_subdirectory(src)
 
 if(NOT DEFINED FLOOR_COUNT)
@@ -24,14 +24,6 @@ if(NOT DEFINED LOG_LEVEL)
     set(LOG_LEVEL 3)
 endif()
 
-if(NOT DEFINED SLAVE_PORT)
-    set(SLAVE_PORT 17533)
-endif()
-
-if(NOT DEFINED MASTER_PORT)
-    set(MASTER_PORT 17532)
-endif()
-
-target_compile_definitions(master PRIVATE FLOOR_COUNT=${FLOOR_COUNT} ELEVATOR_COUNT=${ELEVATOR_COUNT} LOG_LEVEL=${LOG_LEVEL} SLAVE_PORT=${SLAVE_PORT} MASTER_PORT=${MASTER_PORT})
-target_compile_options(master PRIVATE -Wall -Werror=vla)
-target_include_directories(master PUBLIC include)
+target_compile_definitions(elevator PRIVATE FLOOR_COUNT=${FLOOR_COUNT} ELEVATOR_COUNT=${ELEVATOR_COUNT} LOG_LEVEL=${LOG_LEVEL} SLAVE_PORT=${SLAVE_PORT} MASTER_PORT=${MASTER_PORT})
+target_compile_options(elevator PRIVATE -Wall -Werror=vla)
+target_include_directories(elevator PUBLIC include)

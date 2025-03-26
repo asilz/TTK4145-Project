@@ -26,19 +26,19 @@
 #endif
 
 /**
- * @brief Writes an INFO level message to the log
+ * @brief Writes an INFO level message to stdout
  *
  * @param ... A string optionally containing printf valid conversion specifier, followed by as many values as specifiers
  */
 #define LOG_INFO(...) LOG_INFO__(__VA_ARGS__)
 /**
- * @brief Writes an WARNING level message to the log
+ * @brief Writes an WARNING level message to stdout
  *
  * @param ... A string optionally containing printf valid conversion specifier, followed by as many values as specifiers
  */
 #define LOG_WARNING(...) LOG_WARNING__(__VA_ARGS__)
 /**
- * @brief Writes an ERROR level message to the log
+ * @brief Writes an ERROR level message to stdout
  *
  * @param ... A string optionally containing printf valid conversion specifier, followed by as many values as specifiers
  */
