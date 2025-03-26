@@ -24,6 +24,6 @@ if(NOT DEFINED LOG_LEVEL)
     set(LOG_LEVEL 3)
 endif()
 
-target_compile_definitions(elevator PRIVATE FLOOR_COUNT=${FLOOR_COUNT} ELEVATOR_COUNT=${ELEVATOR_COUNT} LOG_LEVEL=${LOG_LEVEL} SLAVE_PORT=${SLAVE_PORT} MASTER_PORT=${MASTER_PORT})
+target_compile_definitions(elevator PRIVATE FLOOR_COUNT=${FLOOR_COUNT} ELEVATOR_COUNT=${ELEVATOR_COUNT} LOG_LEVEL=${LOG_LEVEL})
 target_compile_options(elevator PRIVATE -Wall -Werror=vla)
-target_include_directories(elevator PUBLIC include)
+target_include_directories(elevator PRIVATE include)
