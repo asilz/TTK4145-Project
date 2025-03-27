@@ -10,35 +10,35 @@
 #define DOOR_OPEN_TIME_SEC (3)
 #define DISABLED_TIMEOUT (8)
 
-enum floor_flags_t
+typedef enum
 {
     FLOOR_FLAG_BUTTON_UP = 1,
     FLOOR_FLAG_BUTTON_DOWN = 1 << 1,
     FLOOR_FLAG_BUTTON_CAB = 1 << 2,
     FLOOR_FLAG_LOCKED_UP = 1 << 3,
     FLOOR_FLAG_LOCKED_DOWN = 1 << 4
-};
+} floor_flags_t;
 
-enum elevator_state_t
+typedef enum
 {
     ELEVATOR_STATE_IDLE = 0,
     ELEVATOR_STATE_MOVING = 1,
     ELEVATOR_STATE_OPEN = 2,
-};
+} elevator_state_t;
 
-enum elevator_direction_t
+typedef enum
 {
     ELEVATOR_DIRECTION_UP = 0,
     ELEVATOR_DIRECTION_DOWN = 1,
-};
+} elevator_direction_t;
 
-static enum floor_flags_t direction_to_floor_flag_button_(enum elevator_direction_t direction)
+static floor_flags_t direction_to_floor_flag_button_(elevator_direction_t direction)
 {
     static const uint8_t table[2] = {FLOOR_FLAG_BUTTON_UP, FLOOR_FLAG_BUTTON_DOWN};
     return table[direction];
 }
 
-static enum floor_flags_t direction_to_floor_flag_locked_(enum elevator_direction_t direction)
+static floor_flags_t direction_to_floor_flag_locked_(elevator_direction_t direction)
 {
     static const uint8_t table[2] = {FLOOR_FLAG_LOCKED_UP, FLOOR_FLAG_LOCKED_DOWN};
     return table[direction];
@@ -216,7 +216,7 @@ static void complete_order(elevator_t *elevator, socket_t elevator_socket, const
 }
 
 static bool order_is_available(const elevator_t *elevators, const struct timespec *elevator_times,
-                               const struct timespec *current_time, enum elevator_direction_t direction, uint8_t floor)
+                               const struct timespec *current_time, elevator_direction_t direction, uint8_t floor)
 {
     for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
     {
@@ -236,7 +236,7 @@ static bool order_is_available(const elevator_t *elevators, const struct timespe
 }
 
 static bool verify_locked_floors(elevator_t *elevators, const struct timespec *elevator_times,
-                                 enum elevator_direction_t direction, const size_t index)
+                                 elevator_direction_t direction, const size_t index)
 {
     for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
     {
