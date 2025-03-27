@@ -103,7 +103,6 @@ int process_init(bool is_primary, size_t index)
         LOG_ERROR("mmap failed, err = %d\n", errno);
         return -errno;
     }
-    memset(shared_memory, sizeof(*shared_memory), 0);
 
     if (sem_trywait(&shared_memory->primary_sem) == -1 && errno == EINVAL)
     {
