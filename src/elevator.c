@@ -273,7 +273,6 @@ void elevator_run(system_state_t *system, const uint16_t *ports, const size_t in
 
     /* Run elevator startup */
     startup(&system->elevators[index], system->elevator_socket);
-    size_t broadcast_failed_count = 0;
 
     while (1) // Main control loop
     {
@@ -308,11 +307,6 @@ void elevator_run(system_state_t *system, const uint16_t *ports, const size_t in
             if (err == -1)
             {
                 LOG_ERROR("broadcast error = %d\n", errno);
-                ++broadcast_failed_count;
-            }
-            else
-            {
-                broadcast_failed_count = 0;
             }
         }
 
