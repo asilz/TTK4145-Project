@@ -2,7 +2,6 @@
 #define DRIVER_H
 
 #include <netinet/ip.h>
-#include <sys/socket.h>
 
 #ifndef FLOOR_COUNT
 #define FLOOR_COUNT 4
@@ -12,188 +11,108 @@
 #define ELEVATOR_COUNT 3
 #endif
 
-struct socket_vtable_t_;
+#define ENOFLOOR 41 // 41 is not an error code defined in the posix standard, so I will use it for my own error code
 
-typedef enum button_type_e
+typedef enum
 {
     BUTTON_TYPE_HALL_UP = 0,
     BUTTON_TYPE_HALL_DOWN,
     BUTTON_TYPE_CAB,
-    BUTTON_TYPE_MAX,
-} button_type_e;
+} button_type_t;
 
-typedef enum command_type_e
+typedef enum
 {
-    COMMAND_TYPE_RELOAD_CONFIG = 0,
-    COMMAND_TYPE_MOTOR_DIRECTION,
-    COMMAND_TYPE_ORDER_BUTTON_LIGHT,
-    COMMAND_TYPE_FLOOR_INDICATOR,
-    COMMAND_TYPE_DOOR_OPEN_LIGHT,
-    COMMAND_TYPE_STOP_BUTTON_LIGHT,
-    COMMAND_TYPE_ORDER_BUTTON,
-    COMMAND_TYPE_FLOOR_SENSOR,
-    COMMAND_TYPE_STOP_BUTTON,
-    COMMAND_TYPE_OBSTRUCTION_SWITCH,
+    MOTOR_DIRECTION_DOWN = -1,
+    MOTOR_DIRECTION_STOP = 0,
+    MOTOR_DIRECTION_UP = 1
+} motor_direction_t;
 
-    COMMAND_TYPE_ORDER_BUTTON_ALL,
-    COMMAND_TYPE_ORDER_BUTTON_LIGHT_ALL,
-} command_type_e;
-
-struct packet_t
-{
-    uint8_t command;
-    union
-    {
-        struct
-        {
-            int8_t motor_direction;
-        } motor_direction_data;
-        struct
-        {
-            uint8_t button_type;
-            uint8_t floor;
-            uint8_t value;
-        } order_button_light_data;
-        struct
-        {
-            uint8_t floor;
-        } floor_indicator_data;
-        struct
-        {
-            uint8_t value;
-        } door_open_light_data;
-        struct
-        {
-            uint8_t value;
-        } stop_button_light_data;
-        struct
-        {
-            union
-            {
-                struct
-                {
-                    uint8_t button;
-                    uint8_t floor;
-                } instruction;
-                struct
-                {
-                    uint8_t pressed;
-                } output;
-            };
-
-        } order_button_data;
-        struct
-        {
-            union
-            {
-                struct
-                {
-                    // Empty
-                } instruction;
-                struct
-                {
-                    uint8_t at_floor;
-                    uint8_t floor;
-                } output;
-            };
-        } floor_sensor_data;
-        struct
-        {
-            union
-            {
-                struct
-                {
-                    // Empty
-                } instruction;
-                struct
-                {
-                    uint8_t pressed;
-                } output;
-            };
-        } stop_button_data;
-        struct
-        {
-            union
-            {
-                struct
-                {
-                    // Empty
-                } instruction;
-                struct
-                {
-                    uint8_t active;
-                } output;
-            };
-        } obstruction_switch_data;
-        struct
-        {
-            uint8_t floor_states[FLOOR_COUNT];
-        } order_button_all_data;
-        struct
-        {
-            uint8_t floor_lights[FLOOR_COUNT];
-        } order_button_light_all_data;
-    };
-};
-
-typedef struct socket_t
-{
-    const struct socket_vtable_t_ *vfptr;
-    struct sockaddr address;
-    int fd;
-} socket_t;
-
-struct socket_vtable_t_
-{
-    int (*send_recv)(socket_t *sock, struct packet_t *packet);
-    int (*recv)(socket_t *sock, struct packet_t *packet);
-    int (*send)(socket_t *sock, const struct packet_t *packet);
-};
+typedef int socket_t;
 
 /**
- * @brief sends @p packet
+ * @brief Initializes a socket connected to an elevator
  *
- * @param sock socket to send data through
- * @param packet packet to send
- * @return 0 on success, otherwise negative error code
+ * @param address address of the elevator
+ * @return socket
  */
-int socket_send(socket_t *sock, const struct packet_t *packet);
+socket_t driver_init(const struct sockaddr_in *address);
 
 /**
- * @brief recieves from @p socket and stores the result in @p packet
+ * @brief Sets the motor direction of an elevator to @p direction
  *
- * @param sock socket to recieve from
- * @param packet packet to store recieved data
- * @return 0 on success, otherwise negative error code
+ * @param sock elevator socket
+ * @param direction motor direction
+ * @return error code
+ * @retval 0 on success, otherwise negative error code
  */
-int socket_recv(socket_t *sock, struct packet_t *packet);
+int driver_set_motor_direction(socket_t sock, motor_direction_t direction);
 
 /**
- * @brief sends @p packet and recieves the result in @p packet
+ * @brief Sets the button lamps according to @p floor_state at @p floor
  *
- * @param sock socket to send and recieve from
- * @param packet packet to send and recieve to
- * @return 0 on success, otherwise negative error code
+ * @param sock elevator socket
+ * @param floor_state bitmap
+ * @param floor floor to adjust the lamps
+ * @return error code
+ * @retval 0 on success, otherwise negative error code
  */
-int socket_send_recv(socket_t *sock, struct packet_t *packet);
+int driver_set_button_lamp(socket_t sock, uint8_t floor_state, uint8_t floor);
 
 /**
- * @brief Initializes a socket for communicating with a slave with address @p address using udp
+ * @brief Sets the floor indicator to @p floor
  *
- * @param sock socket to initialize
- * @param address slave address
- * @param bind_address this programs address
- * @return 0 on success, otherwise negative error code
+ * @param sock elevator socket
+ * @param floor floor index
+ * @return error code
+ * @retval 0 on success, otherwise negative error code
  */
-int node_udp_init(socket_t *sock, const struct sockaddr_in *address, const struct sockaddr_in *bind_address);
+int driver_set_floor_indicator(socket_t sock, uint8_t floor);
 
 /**
- * @brief Initializes a socket for communicating with an elevator with address @p address using tcp
+ * @brief Sets the door open lamp to @p value
  *
- * @param sock socket to initialize
- * @param address elevator address
- * @return 0 on success, otherwise negative error code
+ * @param sock elevator socket
+ * @param value either 1 for on or 0 for off
+ * @return error code
+ * @retval 0 on success, otherwise negative error code
  */
-int elevator_init(socket_t *sock, const struct sockaddr_in *address);
+int driver_set_door_open_lamp(socket_t sock, uint8_t value);
+
+/**
+ * @brief Receives button signals and stores them in @p floor_states
+ *
+ * @param sock elevator socket
+ * @param floor_states byte array with size equal to FLOOR_COUNT
+ * @return error code
+ * @retval 0 on success, otherwise negative error code
+ */
+int driver_get_button_signals(socket_t sock, uint8_t *floor_states);
+
+/**
+ * @brief Receives button signals and stores them in @p floor_states
+ *
+ * @param sock elevator socket
+ * @return floor index or error code
+ * @retval floor index, negative error code on failure
+ */
+int driver_get_floor_sensor_signal(socket_t sock);
+
+/**
+ * @brief Receives obstruction signal
+ *
+ * @param sock elevator socket
+ * @return obstruction signal or error code
+ * @retval 1 or 0 on success, negative error code on failure
+ */
+int driver_get_obstruction_signal(socket_t sock);
+
+/**
+ * @brief Reloads elevator config
+ *
+ * @param sock elevator socket
+ * @return error code
+ * @retval 0 on success, otherwise negative error code
+ */
+int driver_reload_config(socket_t sock);
 
 #endif

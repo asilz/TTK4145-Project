@@ -1,0 +1,69 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug0",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/elevator",
+            "args": [
+                "-i",
+                "0",
+                "-b",
+                "0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "Debug1",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/elevator",
+            "args": [
+                "-i",
+                "1",
+                "-b",
+                "0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "Debug2",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/elevator",
+            "args": [
+                "-i",
+                "2",
+                "-b",
+                "0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Compound",
+            "configurations": [
+                "Debug0",
+                "Debug1",
+                "Debug2"
+            ]
+        }
+    ]
+}
