@@ -90,7 +90,7 @@ static void register_orders(elevator_t *elevators, const struct timespec *elevat
                 if (elevators[index].floor_states[j] & FLOOR_FLAG_LOCKED_UP)
                 {
                     if ((elevators[i].floor_states[j] & (FLOOR_FLAG_LOCKED_UP | FLOOR_FLAG_BUTTON_UP)) ==
-                        0) // If order was completed by a different elevator 
+                        0) // If order was completed by a different elevator
                     {
                         elevators[index].floor_states[j] &=
                             FLOOR_FLAG_BUTTON_CAB | FLOOR_FLAG_LOCKED_DOWN | FLOOR_FLAG_BUTTON_DOWN;
@@ -113,8 +113,8 @@ static void register_orders(elevator_t *elevators, const struct timespec *elevat
                         }
                     }
                 }
-                /* If our elevator is not locking, but the other elevator is locking. Locking is important to communicate, so 
-                 * that we agree that the elevator can take the call */
+                /* If our elevator is not locking, but the other elevator is locking. Locking is important to
+                 * communicate, so that we agree that the elevator can take the call */
                 else if (elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED_UP)
                 {
                     elevators[index].floor_states[j] |= FLOOR_FLAG_LOCKED_UP;
@@ -156,7 +156,7 @@ static void register_orders(elevator_t *elevators, const struct timespec *elevat
                         }
                     }
                 }
-                /* If our elevator is not locking, but the other elevator is locking. Locking is important to  
+                /* If our elevator is not locking, but the other elevator is locking. Locking is important to
                  * communicate, so that we agree that the elevator can take the call */
                 else if (elevators[i].floor_states[j] & FLOOR_FLAG_LOCKED_DOWN)
                 {
@@ -224,7 +224,8 @@ static bool order_is_available(const elevator_t *elevators, const struct timespe
         {
             continue;
         }
-        /* If any active elevator has a button request for this floor in the given direction, or if any has already locked it, then the order is not available */
+        /* If any active elevator has a button request for this floor in the given direction, or if any has already
+         * locked it, then the order is not available */
         if ((elevators[i].floor_states[floor] & direction_to_floor_flag_button_(direction)) == 0 ||
             ((elevators[i].floor_states[floor] & direction_to_floor_flag_locked_(direction)) != 0))
         {
@@ -369,12 +370,12 @@ void elevator_run(system_state_t *system, const uint16_t *ports, const size_t in
                 disable_timer = elevator_times[index];
                 system->elevators[index].disabled = 0;
             }
-            else if (disable_timer.tv_sec + DISABLED_TIMEOUT < elevator_times[index].tv_sec) 
+            else if (disable_timer.tv_sec + DISABLED_TIMEOUT < elevator_times[index].tv_sec)
             {
                 system->elevators[index].disabled = 1;
             }
         }
-        
+
         /* Stop elevator at floor if it has an order */
         if (system->elevators[index].state == ELEVATOR_STATE_MOVING && floor_signal_err >= 0)
         {
@@ -596,7 +597,8 @@ void elevator_run(system_state_t *system, const uint16_t *ports, const size_t in
                 system->elevators[index].direction = ELEVATOR_DIRECTION_DOWN;
             }
 
-            /* Start moving UP or DOWN or opening doors depending on the relation between current_floor and target_floor */
+            /* Start moving UP or DOWN or opening doors depending on the relation between current_floor and target_floor
+             */
             if (system->elevators[index].target_floor > system->elevators[index].current_floor)
             {
                 system->elevators[index].state = ELEVATOR_STATE_MOVING;

@@ -27,7 +27,7 @@ int main(int argc, char **argv)
             sscanf(optarg, "%lu", &index);
             break;
         case 'b':
-             /* Convert the input string to an unsigned 8-bit int and store it in is_backup */
+            /* Convert the input string to an unsigned 8-bit int and store it in is_backup */
             sscanf(optarg, "%" SCNu8, &is_backup);
             break;
         case -1:
