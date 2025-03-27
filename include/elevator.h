@@ -4,7 +4,7 @@
 #include <driver.h>
 #include <inttypes.h>
 
-typedef struct elevator_t
+typedef struct
 {
     uint8_t state;
     uint8_t floor_states[FLOOR_COUNT];
@@ -15,7 +15,7 @@ typedef struct elevator_t
     uint8_t disabled;
 } elevator_t;
 
-typedef struct system_state
+typedef struct
 {
     elevator_t elevators[ELEVATOR_COUNT];
     socket_t elevator_socket;

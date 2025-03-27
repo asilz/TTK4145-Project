@@ -36,7 +36,7 @@ int driver_reload_config(socket_t sock)
     return 0;
 }
 
-int driver_set_motor_direction(socket_t sock, enum motor_direction direction)
+int driver_set_motor_direction(socket_t sock, motor_direction_t direction)
 {
     if (send(sock, &(packet_t){.command = COMMAND_TYPE_MOTOR_DIRECTION, .args = {direction}}, sizeof(packet_t),
              MSG_NOSIGNAL) == -1)
@@ -115,41 +115,6 @@ int driver_get_obstruction_signal(socket_t sock)
     send(sock, &msg, sizeof(msg), MSG_NOSIGNAL);
     recv(sock, &msg, sizeof(msg), MSG_NOSIGNAL);
     return msg.args[0];
-}
-
-int driver_update_state(socket_t sock, elevator_t *elevator_state)
-{
-    send(sock, &(packet_t){.command = COMMAND_TYPE_FLOOR_SENSOR, .args = {0}}, sizeof(packet_t), MSG_NOSIGNAL);
-    packet_t msg;
-    recv(sock, &msg, sizeof(msg), MSG_NOSIGNAL);
-    if (msg.args[0])
-    {
-        if (msg.args[1] != elevator_state->current_floor)
-        {
-            elevator_state->current_floor = msg.args[1];
-            send(sock, &(packet_t){.command = COMMAND_TYPE_FLOOR_INDICATOR, .args = {elevator_state->current_floor}},
-                 sizeof(packet_t), MSG_NOSIGNAL);
-        }
-    }
-
-    for (uint8_t i = 0; i < FLOOR_COUNT; ++i)
-    {
-        for (uint8_t j = 0; j <= BUTTON_TYPE_CAB; ++j)
-        {
-            packet_t msg = {.command = COMMAND_TYPE_ORDER_BUTTON, .args = {j, i}};
-            send(sock, &msg, sizeof(packet_t), MSG_NOSIGNAL);
-            recv(sock, &msg, sizeof(packet_t), MSG_NOSIGNAL);
-            if ((elevator_state->floor_states[i] >> j & 1) != (msg.args[0] & 1))
-            {
-                if (send(sock, &(packet_t){.command = COMMAND_TYPE_ORDER_BUTTON_LIGHT, .args = {j, i, msg.args[0]}},
-                         sizeof(packet_t), MSG_NOSIGNAL) == -1)
-                {
-                    return -errno;
-                }
-            }
-            elevator_state->floor_states[i] |= msg.args[0] << j;
-        }
-    }
 }
 
 socket_t driver_init(const struct sockaddr_in *address)

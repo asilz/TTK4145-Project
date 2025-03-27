@@ -44,12 +44,6 @@ static enum floor_flags_t direction_to_floor_flag_locked_(enum elevator_directio
     return table[direction];
 }
 
-static enum motor_direction direction_to_motor_direction_(enum elevator_direction_t direction)
-{
-    static const int8_t table[2] = {MOTOR_DIRECTION_UP, MOTOR_DIRECTION_DOWN};
-    return table[direction];
-}
-
 static void move_to_floor(socket_t elevator_socket)
 {
     int err = driver_get_floor_sensor_signal(elevator_socket);

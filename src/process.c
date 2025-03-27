@@ -46,7 +46,6 @@ static void *signal_primary_routine(void *arg)
         else
         {
             LOG_INFO("Starting backup process");
-            sleep(10);
             system(command);
         }
     }
@@ -77,7 +76,6 @@ static void *signal_backup_routine(void *arg)
         else
         {
             LOG_INFO("Starting main process\n");
-            sleep(10);
             system(command);
         }
     }
