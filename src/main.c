@@ -19,13 +19,17 @@ int main(int argc, char **argv)
 
     while (1)
     {
+        /* Parse command-line arguments */
         switch (getopt(argc, argv, "i:b:"))
         {
         case 'i':
+            /* Convert the input string to an unsigned long and store it in index */
             sscanf(optarg, "%lu", &index);
             break;
         case 'b':
+             /* Convert the input string to an unsigned 8-bit int and store it in is_backup */
             sscanf(optarg, "%" SCNu8, &is_backup);
+            break;
         case -1:
             return process_init(!is_backup, index);
         }

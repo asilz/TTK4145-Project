@@ -48,7 +48,6 @@ int driver_set_motor_direction(socket_t sock, motor_direction_t direction)
 
 int driver_set_button_lamp(socket_t sock, uint8_t floor_state, uint8_t floor)
 {
-
     for (uint8_t i = BUTTON_TYPE_HALL_UP; i <= BUTTON_TYPE_CAB; ++i)
     {
         if (send(sock,
@@ -124,7 +123,6 @@ socket_t driver_init(const struct sockaddr_in *address)
     {
         return -errno;
     }
-
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &(struct timeval){.tv_sec = 0, .tv_usec = 0},
                    sizeof(struct timeval)) == -1)
     {
@@ -132,13 +130,11 @@ socket_t driver_init(const struct sockaddr_in *address)
         (void)close(sock);
         return err;
     }
-
     if (connect(sock, (struct sockaddr *)address, sizeof(*address)) == -1)
     {
         int err = -errno;
         (void)close(sock);
         return err;
     }
-
     return sock;
 }

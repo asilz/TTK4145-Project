@@ -85,6 +85,7 @@ static void *signal_backup_routine(void *arg)
 
 int process_init(bool is_primary, size_t index)
 {
+    /* Creating and mapping a shared memory object */
     char file_name[7] = {index + 'A', '.', 't', 'e', 'm', 'p', '\0'};
 
     int fd = shm_open(file_name, O_CREAT | O_EXCL | O_RDWR, 0660);
@@ -121,10 +122,11 @@ int process_init(bool is_primary, size_t index)
         sem_post(&shared_memory->primary_sem);
     }
 
-    uint16_t ports[ELEVATOR_COUNT] = {10042, 10043, 10044};
+    uint16_t ports[ELEVATOR_COUNT] = {10042, 10043, 10044}; // Ports for the elevators - changeble if needed 
     pthread_t thread;
     if (is_primary)
     {
+        /* Creating and checking the peer socet */
         struct sockaddr_in addr_in = {
             .sin_addr.s_addr = htonl(INADDR_ANY), .sin_port = htons(ports[index]), .sin_family = AF_INET};
 
@@ -167,6 +169,7 @@ int process_init(bool is_primary, size_t index)
             }
         }
 
+        /* Initializing the elevator system */
         addr_in.sin_port = htons(15657 + index);
         shared_memory->state.elevator_socket = driver_init(&addr_in);
 
@@ -174,6 +177,7 @@ int process_init(bool is_primary, size_t index)
     }
     else
     {
+        /* Creating backup routine */
         pthread_create(&thread, NULL, signal_backup_routine, &index);
         pthread_join(thread, NULL);
         return 0;
