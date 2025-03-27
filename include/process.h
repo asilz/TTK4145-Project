@@ -12,6 +12,6 @@
  * @return error code
  * @retval 0 on success, otherwise negative error code
  */
-int process_init(bool is_primary, const size_t index);
+int process_init(bool is_primary, size_t index);
 
 #endif

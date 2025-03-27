@@ -30,7 +30,7 @@ static void *signal_primary_routine(void *arg)
 
     char command[128];
     (void)snprintf(command, sizeof(command),
-                   "unset GTK_PATH; gnome-terminal -- bash -c \"./master -i %d -b 1; exec bash\"",
+                   "unset GTK_PATH; gnome-terminal -- bash -c \"./elevator -i %d -b 1; exec bash\"",
                    (uint16_t)(*((uint8_t *)arg)));
 
     struct timespec time;
@@ -61,7 +61,7 @@ static void *signal_backup_routine(void *arg)
 
     char command[128];
     (void)snprintf(command, sizeof(command),
-                   "unset GTK_PATH; gnome-terminal -- bash -c \"./master -i %d -b 0; exec bash\"",
+                   "unset GTK_PATH; gnome-terminal -- bash -c \"./elevator -i %d -b 0; exec bash\"",
                    (uint16_t)(*((uint8_t *)arg)));
 
     struct timespec time;
@@ -85,7 +85,7 @@ static void *signal_backup_routine(void *arg)
     return NULL;
 }
 
-int process_init(bool is_primary, const size_t index)
+int process_init(bool is_primary, size_t index)
 {
     char file_name[7] = {index + 'A', '.', 't', 'e', 'm', 'p', '\0'};
 
@@ -173,12 +173,12 @@ int process_init(bool is_primary, const size_t index)
         addr_in.sin_port = htons(15657 + index);
         shared_memory->state.elevator_socket = driver_init(&addr_in);
 
-        // pthread_create(&thread, NULL, signal_primary_routine, &index);
+        pthread_create(&thread, NULL, signal_primary_routine, &index);
     }
     else
     {
-        // pthread_create(&thread, NULL, signal_backup_routine, &index);
-        // pthread_join(thread, NULL);
+        pthread_create(&thread, NULL, signal_backup_routine, &index);
+        pthread_join(thread, NULL);
         return 0;
     }
 

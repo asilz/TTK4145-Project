@@ -79,31 +79,6 @@ static void startup(elevator_t *elevator, socket_t elevator_socket)
     elevator->state = ELEVATOR_STATE_IDLE;
 }
 
-static void recv_states(system_state_t *system, const uint16_t *ports, const size_t index)
-{
-    elevator_t elevator;
-    struct sockaddr_in addr_in;
-    socklen_t addr_size = sizeof(addr_in);
-    while (recvfrom(system->peer_socket, &elevator, sizeof(elevator), MSG_NOSIGNAL, (struct sockaddr *)&addr_in,
-                    &addr_size) != -1)
-    {
-        uint8_t found = 0;
-        for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
-        {
-            if (addr_in.sin_port == htons(ports[i]))
-            {
-                found = 1;
-                // clock_gettime(CLOCK_REALTIME, &elevator_times[i]);
-                system->elevators[i] = elevator;
-            }
-        }
-        if (!found || addr_in.sin_port == htons(ports[index]))
-        {
-            LOG_ERROR("Wrong port from recv %d\n", errno);
-        }
-    }
-}
-
 static void register_orders(elevator_t *elevators, const struct timespec *elevator_times, const size_t index)
 {
     for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
@@ -205,13 +180,17 @@ static void register_orders(elevator_t *elevators, const struct timespec *elevat
     }
 }
 
-static bool floor_is_locked(const elevator_t *elevators, const size_t index)
+static bool floor_is_locked(const elevator_t *elevators, const struct timespec *elevator_times, const size_t index)
 {
     if ((elevators[index].floor_states[elevators[index].current_floor] & FLOOR_FLAG_BUTTON_CAB) == 0 &&
         elevators[index].current_floor != elevators[index].target_floor)
     {
         for (size_t i = 0; i < ELEVATOR_COUNT; ++i)
         {
+            if ((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec))
+            {
+                continue;
+            }
             if (((elevators[i].floor_states[elevators[index].current_floor] &
                   direction_to_floor_flag_locked_(elevators[index].direction)) == 0) ||
                 elevators[i].locking_elevator[elevators[index].direction][elevators[index].current_floor] != index)
@@ -397,7 +376,7 @@ void elevator_run(system_state_t *system, const uint16_t *ports, const size_t in
         if (system->elevators[index].state == ELEVATOR_STATE_MOVING && floor_signal_err >= 0)
         {
             /* We only stop if all elevators agree that we are taking this call */
-            if (floor_is_locked(system->elevators, index))
+            if (floor_is_locked(system->elevators, elevator_times, index))
             {
                 driver_set_motor_direction(system->elevator_socket, MOTOR_DIRECTION_STOP);
                 system->elevators[index].state = ELEVATOR_STATE_OPEN;
