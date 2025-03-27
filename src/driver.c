@@ -7,13 +7,13 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-typedef struct packet
+typedef struct
 {
     int8_t command;
     int8_t args[3];
 } packet_t;
 
-enum command_type
+typedef enum
 {
     COMMAND_TYPE_RELOAD_CONFIG = 0,
     COMMAND_TYPE_MOTOR_DIRECTION,
@@ -25,7 +25,7 @@ enum command_type
     COMMAND_TYPE_FLOOR_SENSOR,
     COMMAND_TYPE_STOP_BUTTON,
     COMMAND_TYPE_OBSTRUCTION_SWITCH,
-};
+} command_type_t;
 
 int driver_reload_config(socket_t sock)
 {

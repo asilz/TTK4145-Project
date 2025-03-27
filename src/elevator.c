@@ -243,7 +243,7 @@ static bool verify_locked_floors(elevator_t *elevators, const struct timespec *e
         if (((elevator_times[i].tv_sec + ELEVATOR_DISCONNECTED_TIME_SEC < elevator_times[index].tv_sec)) ||
             (elevators[i].disabled && elevators[index].target_floor != elevators[i].current_floor))
         {
-            /* If a disconnected elevator was recorded at the lock holder, take over the lock */
+            /* If a disconnected elevator was recorded as the lock holder, take over the lock */
             if (elevators[index].locking_elevator[direction][elevators[index].target_floor] == i)
             {
                 elevators[index].locking_elevator[direction][elevators[index].target_floor] = index;
@@ -376,7 +376,7 @@ void elevator_run(system_state_t *system, const uint16_t *ports, const size_t in
             }
         }
 
-        /* Stop elevator at floor if it has an order */
+        /* Stop elevator at floor if it has an order there */
         if (system->elevators[index].state == ELEVATOR_STATE_MOVING && floor_signal_err >= 0)
         {
             /* We only stop if all elevators agree that we are taking this call */

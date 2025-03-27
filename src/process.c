@@ -103,7 +103,8 @@ int process_init(bool is_primary, size_t index)
         return -errno;
     }
 
-    if (sem_trywait(&shared_memory->primary_sem) == -1 && errno == EINVAL)
+    if (sem_trywait(&shared_memory->primary_sem) == -1 &&
+        errno == EINVAL) // Check if semaphores are already initialized
     {
         if (sem_init(&shared_memory->primary_sem, 1, 1) == -1)
         {
@@ -132,7 +133,8 @@ int process_init(bool is_primary, size_t index)
 
         int err = 0;
         socklen_t error_code_size = sizeof(err);
-        int retval = getsockopt(shared_memory->state.peer_socket, SOL_SOCKET, SO_ERROR, &err, &error_code_size);
+        int retval = getsockopt(shared_memory->state.peer_socket, SOL_SOCKET, SO_ERROR, &err,
+                                &error_code_size); // Check if the socket is already initialized
 
         if (err != 0 || retval == -1)
         {

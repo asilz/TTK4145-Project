@@ -23,7 +23,8 @@ int main(int argc, char **argv)
         switch (getopt(argc, argv, "i:b:"))
         {
         case 'i':
-            /* Convert the input string to an unsigned long and store it in index */
+            /* Convert the input string to an unsigned long and store it in index. Each node in the system will have a
+             * different index */
             sscanf(optarg, "%lu", &index);
             break;
         case 'b':
